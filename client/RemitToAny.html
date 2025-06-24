@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3 Steps Closer To Home</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            background: #f5fafd;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .remit-to-any-container {
+            background: #fff;
+            max-width: 900px;
+            margin: 40px auto;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+            padding: 40px 30px;
+            display: flex;
+            gap: 40px;
+            align-items: center;
+        }
+    
+        .remit-to-any-steps-section {
+            flex: 1;
+        }
+        .remit-to-any-steps-section h1 {
+            color: #163560;
+            margin-bottom: 10px;
+            font-size: 2.1em;
+        }
+        .remit-to-any-steps-section p {
+            color: #606775;
+            margin-bottom: 30px;
+            font-size: 1.09em;
+        }
+        .remit-to-any-step-list {
+            list-style: none;
+            padding: 0;
+        }
+        .remit-to-any-step-list li {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 18px;
+        }
+        .remit-to-any-step-number {
+            font-weight: 700;
+            background: #1e3350;
+            color: #fff;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            text-align: center;
+            line-height: 32px;
+            font-size: 1.12em;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        .remit-to-any-step-details {
+            color: #252930;
+        }
+        .remit-to-any-step-details b {
+            display: block;
+            margin-bottom: 2px;
+        }
+        .remit-to-any-note {
+            color: #606775;
+            font-size: 1em;
+            margin-top: 22px;
+            margin-bottom: 18px;
+        }
+        .remit-to-any-highlight {
+            font-weight: 700;
+            color: #163560;
+        }
+        .remit-to-any-cta-button {
+            padding: 12px 32px;
+            background: linear-gradient(90deg, #f17b29, #fdbe59);
+            color: #fff;
+            border: none;
+            border-radius: 30px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            box-shadow: 0 2px 7px rgba(253,190,89,0.13);
+        }
+        .remit-to-any-cta-button:hover {
+            background: linear-gradient(90deg, #fdbe59, #f17b29);
+        }
+
+    .offer-promo-card {
+    background: #fff;
+    max-width: 420px;
+    margin: 40px auto;
+    border-radius: 22px;
+    box-shadow: 0 4px 18px 0 rgba(93, 80, 68, .08);
+    border: 2px solid #fac79f;
+    padding: 30px 20px 18px 20px;
+}
+.offer-exchange-rate {
+    display: flex;
+    align-items: center;
+    background: #f8fafc;
+    border-radius: 18px;
+    padding: 18px 16px 10px 16px;
+    box-shadow: 0 3px 13px 0 rgba(93, 80, 68, .10);
+    margin-bottom: 14px;
+}
+.offer-exchange-rate img {
+    width: 36px;
+    margin-right: 14px;
+}
+.offer-exchange-info {
+    flex: 1;
+}
+.offer-exchange-info .title {
+    font-weight: 700;
+    color: #1c283a;
+    font-size: 1.09em;
+}
+.offer-exchange-info .rate {
+    font-weight: 800;
+    font-size: 1.38em;
+    color: #15325b;
+    margin: 6px 0;
+}
+.offer-exchange-info .rate s {
+    color: #adadad;
+    font-size: 0.9em;
+    margin-left: 8px;
+}
+.offer-exchange-info .note {
+    color: #0e3e7c;
+    font-weight: 600;
+    font-size: 1em;
+}
+.offer-benefits {
+    margin: 30px 0 0 0;
+    padding-left: 0;
+    list-style: none;
+}
+.offer-benefits li {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    font-size: 1.12em;
+    color: #213347;
+    font-weight: 500;
+}
+.offer-benefits li .icon {
+    font-size: 1.2em;
+    margin-right: 14px;
+    color: #ff7300;
+    display: flex;
+    align-items: center;
+    width: 30px;
+}
+.offer-powered-by {
+    text-align: center;
+    margin-top: 20px;
+    color: #888;
+    font-size: 1em;
+    letter-spacing: 1px;
+}
+.offer-remit-logo {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 10px;
+    font-weight: 800;
+    color: #0a3969;
+    letter-spacing: -1px;
+    font-size: 1.18em;
+}
+.offer-remit-logo span {
+    color: #ff7300;
+}
+
+        @media (max-width: 768px) {
+            .remit-to-any-container {
+                flex-direction: column;
+                padding: 25px 10px;
+                gap: 25px;
+            }
+            .remit-to-any-image-section img {
+                width: 100%;
+            }
+        }
+
+    </style>
+</head>
+<body>
+    <div class="remit-to-any-container">
+        <!-- <div class="remit-to-any-image-section">
+            <img src="https://images.pexels.com/photos/4005035/pexels-photo-4005035.jpeg" alt="remit-to-any-img">
+        </div> -->
+        <div class="offer-promo-card">
+    <div class="offer-exchange-rate">
+        <img src="https://em-content.zobj.net/source/microsoft-teams/337/money-with-wings_1f4b8.png" alt="Money Icon" />
+        <div class="offer-exchange-info">
+            <div class="title">New Users - Exchange rate</div>
+            <div class="rate">$1 = ₹100.05 <s>₹85.32</s></div>
+            <div class="note">FOR THE FIRST $100</div>
+        </div>
+    </div>
+    <ul class="offer-benefits">
+        <li><span class="icon">💲</span> Zero Fees on All Transactions</li>
+        <li><span class="icon">🎁</span> ₹500 Bonus on First Successful Txn</li>
+        <li><span class="icon">⚡</span> Watch Your Money Reach India Instantly</li>
+    </ul>
+    <div class="offer-powered-by">
+        POWERED BY 
+        <span class="offer-remit-logo">REM<span>IT2</span>ANY</span>
+    </div>
+</div>
+        <div class="remit-to-any-steps-section">
+            <h1>3 Steps Closer To Home</h1>
+            <p>Effortless, quick, and secure money transfers to India.</p>
+            <ul class="remit-to-any-step-list">
+                <li>
+                    <span class="remit-to-any-step-number">1</span>
+                    <div class="remit-to-any-step-details">
+                        <b>Sign Up form</b>
+                        Set up an account just with your email or login with your Gmail.
+                    </div>
+                </li>
+                <li>
+                    <span class="remit-to-any-step-number">2</span>
+                    <div class="remit-to-any-step-details">
+                        <b>USA - KYC & Add account</b>
+                        Use US Driver’s License, US Passport, Visa with Foreign Passport among others.
+                    </div>
+                </li>
+                <li>
+                    <span class="remit-to-any-step-number">3</span>
+                    <div class="remit-to-any-step-details">
+                        <b>India - KYC & Add account</b>
+                        A valid PAN and one of the Aadhar, Driver’s License, Passport or Voter ID are required.
+                    </div>
+                </li>
+            </ul>
+            <div class="remit-to-any-note">
+                To comply with regulations, we need to verify your identity for both the USA and India. Our process completes 99% of verifications instantly.<br>
+                <span class="remit-to-any-highlight">You are ready to Transfer!</span>
+            </div>
+            <button class="remit-to-any-cta-button">Get Started!</button>
+        </div>
+    </div>
+</body>
+</html>

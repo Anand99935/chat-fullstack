@@ -14,10 +14,11 @@ const User = require('./models/user');
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Middleware must come BEFORE routes
+// ✅ Middleware 
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://anand99935.github.io"
+  // "https://anand99935.github.io",
+  "https://chat-system-5.onrender.com"
 ];
 
 // ✅ Admin login check
@@ -25,6 +26,7 @@ const ADMIN_CREDENTIALS = {
   name: 'Admin',
   email: 'admin@chat.com'
 };
+app.options('*', cors());
 
 //sending img/video by cloudinary
 cloudinary.config({
@@ -56,8 +58,9 @@ app.use(express.json());
 
 // ✅ Login route (admin + user)
 app.post('/api/login', async (req, res) => {
-  const { name, email, isAdmin } = req.body;
-  
+  let { name, email, isAdmin } = req.body;
+  email = email.trim().toLowerCase(); // 👈 Add this line
+
   if (isAdmin) {
     if (name === ADMIN_CREDENTIALS.name && email === ADMIN_CREDENTIALS.email) {
       return res.json({
@@ -96,13 +99,24 @@ app.get("/", (req, res) => {
   res.send("💬 Chat backend is running...");
 });
 
-app.get("/messages", async (req, res) => {
-  try {
+app.get('/messages', async (req, res) => {
+    try {
     const messages = await Message.find().sort({ timestamp: 1 });
     res.json(messages);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch messages" });
   }
+  const { user1, user2, limit = 20, offset = 0 } = req.query;
+  const messages = await Message.find({
+    $or: [
+      { sender: user1, receiver: user2 },
+      { sender: user2, receiver: user1 }
+    ]
+  })
+    .sort({ timestamp: -1 }) // latest first
+    .skip(Number(offset))
+    .limit(Number(limit));
+  res.json(messages.reverse()); // reverse for oldest first in UI
 });
 
 app.get("/api/users", async (req, res) => {
@@ -111,6 +125,44 @@ app.get("/api/users", async (req, res) => {
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+app.get("/api/users-with-last-message", async (req, res) => {
+  try {
+    const users = await User.find({ email: { $ne: ADMIN_CREDENTIALS.email } }, "name email");
+
+    // For each user, find the last message between admin and user
+    const adminEmail = ADMIN_CREDENTIALS.email;
+    const usersWithLastMsg = await Promise.all(users.map(async (user) => {
+      const lastMsg = await Message.findOne({
+        $or: [
+          { sender: user.email, receiver: adminEmail },
+          { sender: adminEmail, receiver: user.email }
+        ]
+      }).sort({ timestamp: -1 });
+
+      // Format time (e.g. "10:45 AM" or "Yesterday" etc.)
+      let lastMessageTime = "";
+      if (lastMsg && lastMsg.timestamp) {
+        const date = new Date(lastMsg.timestamp);
+        lastMessageTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
+      return {
+        ...user.toObject(),
+        lastMessageTime: lastMsg ? lastMsg.timestamp : null, // original timestamp
+        lastMessageTimeFormatted: lastMessageTime, // formatted time string
+        lastMessage: lastMsg ? lastMsg.text : ""
+      };
+    }));
+
+    // Sort users by lastMessageTime descending
+    usersWithLastMsg.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+
+    res.json(usersWithLastMsg);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch users with last message" });
   }
 });
 
@@ -140,6 +192,9 @@ app.get("/api/conversation/:userEmail", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch conversation" });
   }
 });
+
+
+
 // ✅ Socket.IO
 const io = new Server(server, {
   cors: {
@@ -165,10 +220,44 @@ if (!sender || !receiver || !text) return;
     }
   });
 
+//typing indicator when user-admin types.
+  socket.on("typing", (data) => {
+    socket.broadcast.emit("typing", data);
+  });
+
+  socket.on("stop-typing", (data) => {
+    socket.broadcast.emit("stop-typing", data);
+  });
+
   socket.on("disconnect", () => {
     console.log("🚪 User disconnected:", socket.id);
   });
 });
+
+let lastMessageTime = "";
+if (lastMsg && lastMsg.timestamp) {
+  const date = new Date(lastMsg.timestamp);
+  const now = new Date();
+
+  // Remove time part for comparison
+  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const diffTime = nowOnly - dateOnly;
+  const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+  if (diffDays === 0) {
+    // Today
+    lastMessageTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (diffDays === 86400000 / (1000 * 60 * 60 * 24)) {
+    // Yesterday
+    lastMessageTime = "Yesterday";
+  } else {
+    // Date (e.g. 24/06/2025)
+    lastMessageTime = date.toLocaleDateString();
+  }
+}
+
 // ✅ Server start
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

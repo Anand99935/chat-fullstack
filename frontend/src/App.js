@@ -20,6 +20,13 @@ function App() {
   const [lastMessages, setLastMessages] = useState({});
   // const [file, setFile] = useState(null);
   const chatBoxRef = useRef(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingUser, setTypingUser] = useState('');
+const [hasMore, setHasMore] = useState(true);
+
+const [loading, setLoading] = useState(false);
+const [offset, setOffset] = useState(0);
+const PAGE_SIZE = 20;
 
   const isAdmin = localStorage.getItem('isAdmin') === 'true';
   const trimmedSearch = searchTerm.trim().toLowerCase();
@@ -43,6 +50,11 @@ function App() {
       setLoggedIn(true);
     }
   }, []);
+const handleScroll = (e) => {
+  if (e.target.scrollTop === 0 && hasMore && !loading) {
+    fetchMessages(false);
+  }
+};
 
   useEffect(() => {
     if (loggedIn && isAdmin) {
@@ -56,24 +68,42 @@ function App() {
   useEffect(() => {
     fetch(`${process.env.REACT_APP_API_URL}/messages`)
       .then(res => res.json())
-      .then(setChat);
-
+      .then(setChat).catch(err =>{
+         console.error('Fetch failed at /messages:', err);
+      })
+     
     socket.on('receive-message', (msg) => {
-      setChat(prev => [...prev, msg]);
+      // Only add to chat if relevant
+      if (
+        (isAdmin && selectedUser && (msg.sender === selectedUser.name || msg.receiver === selectedUser.name)) ||
+        (!isAdmin && (msg.sender === name || msg.receiver === name))
+      ) {
+        setChat(prev => [...prev, msg]);
+      }
 
       if (isAdmin) {
         const { sender, text } = msg;
         const isChatOpen = selectedUser?.name === sender;
 
+        setLastMessages(prev => ({
+          ...prev,
+          [sender]: { text }
+        }));
+
         if (!isChatOpen) {
           setUnreadCounts(prev => ({ ...prev, [sender]: (prev[sender] || 0) + 1 }));
         }
 
-        setLastMessages(prev => ({ ...prev, [sender]: text }));
-
         setUsers(prev => {
           const updated = [...prev];
-          const index = updated.findIndex(u => u.name === sender);
+          // Find the other user (not admin)
+          let userNameToMove;
+          if (msg.sender === 'Admin') {
+            userNameToMove = msg.receiver;
+          } else {
+            userNameToMove = msg.sender;
+          }
+          const index = updated.findIndex(u => u.name === userNameToMove);
           if (index > -1) {
             const [moved] = updated.splice(index, 1);
             return [moved, ...updated];
@@ -141,6 +171,23 @@ const handleFileChange = async (e) => {
   }
 };
 
+// Emit typing event
+const handleTyping = () => {
+  const receiver = isAdmin && selectedUser ? selectedUser.name : 'Admin';
+  socket.emit('typing', { sender: name, receiver });
+};
+
+// Listen for typing event
+useEffect(() => {
+  socket.on('show-typing', ({ sender }) => {
+    setTypingUser(sender);
+    setIsTyping(true);
+    // Hide after 2 seconds of inactivity
+    setTimeout(() => setIsTyping(false), 2000);
+  });
+  return () => socket.off('show-typing');
+}, [selectedUser, isAdmin]);
+
   const sendMessage = () => {
     if (!message.trim()) return;
 
@@ -148,6 +195,37 @@ const handleFileChange = async (e) => {
     socket.emit('send-message', { sender: name, text: message, receiver });
     setMessage('');
   };
+// Example: UserListItem.js
+function UserListItem({ user }) {
+  return (
+    <div className="user-list-item">
+      <div className="user-info">
+        <span>{user.name}</span>
+        <span className="last-message">{user.lastMessage}</span>
+      </div>
+      <div className="last-message-time">
+        {user.lastMessageTimeFormatted}
+      </div>
+    </div>
+  );
+}
+const formatTime = (timestamp) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+
+  const isToday = date.toDateString() === now.toDateString();
+  const isYesterday =
+    new Date(now - 86400000).toDateString() === date.toDateString();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (isYesterday) {
+    return 'Yesterday';
+  } else {
+    return date.toLocaleDateString();
+  }
+};
 
   const highlightText = (text, term) => {
     if (!term) return text;
@@ -156,6 +234,41 @@ const handleFileChange = async (e) => {
       part.toLowerCase() === term ? <span key={i} className="highlight">{part}</span> : part
     );
   };
+
+const fetchMessages = async (reset = false) => {
+  setLoading(true);
+  const user1 = isAdmin ? name : 'Admin';
+  const user2 = isAdmin ? selectedUser?.name : name;
+
+  const res = await fetch(
+    `${process.env.REACT_APP_API_URL}/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
+  );
+
+  const data = await res.json();
+
+  if (reset) {
+    setChat(data);
+    setOffset(data.length);
+  } else {
+    setChat(prev => [...data, ...prev]);
+    setOffset(prev => prev + data.length);
+  }
+
+  setHasMore(data.length === PAGE_SIZE);
+  setLoading(false);
+};
+useEffect(() => {
+  if ((isAdmin && selectedUser) || (!isAdmin && loggedIn)) {
+    fetchMessages(true);
+  }
+}, [selectedUser, loggedIn]);
+
+useEffect(() => {
+  fetch(`${process.env.REACT_APP_API_URL}/messages`)
+    .then(res => res.json())
+    .then(setChat);
+  // ...
+}, [isAdmin, selectedUser]);
 
   const getMatchedMessage = (userName) => {
     const match = chat.find(msg =>
@@ -212,10 +325,11 @@ const handleFileChange = async (e) => {
         />
 <ul className="user-list">
   {filteredUsers.map((user, idx) => {
-    // const lastMsg = lastMessages[user.name];
     const hasSearch = trimmedSearch.length > 0;
     const unread = unreadCounts[user.name] > 0;
     const matchedMsg = getMatchedMessage(user.name); 
+    const lastMsgObj = lastMessages[user.name];
+    const lastMsgTime = lastMsgObj?.time ? formatTime(lastMsgObj.time) : '';
     return (
       <li key={idx} className="user-list-item">
         <button
@@ -232,7 +346,9 @@ const handleFileChange = async (e) => {
               {unread && <span className="badge">{unreadCounts[user.name]}</span>}
             </div>
             <div className="user-email">{user.email}</div>
-            {/* Show matched message preview if searching and match found */}
+            {lastMsgTime && (
+              <div className="last-message-time">{lastMsgTime}</div>
+            )}
             {hasSearch && matchedMsg && (
               <div className="matched-message-preview">
                 {highlightText(matchedMsg, trimmedSearch)}
@@ -261,7 +377,12 @@ const handleFileChange = async (e) => {
         )}
       </div>
 
-     <div className="chat-box" ref={chatBoxRef}>
+     <div className="chat-box" ref={chatBoxRef} onScroll={handleScroll}>
+       {hasMore && !loading && (
+    <button onClick={() => fetchMessages(false)} className="load-more-btn">
+      Load older messages
+    </button>
+  )}
   {chat
     .filter((msg) => {
       if (isAdmin && selectedUser) {
@@ -279,29 +400,35 @@ const handleFileChange = async (e) => {
       }
       return false; // Edge fallback
     })
-    .map((msg, index) => (
-      <div
-        key={index}
-        className={`chat-bubble ${msg.sender === name ? 'you' : 'other'}`}
-      >
-        <div className="sender">{msg.sender}</div>
-        <div className="text">
-          {msg.type === 'image' ? (
-            <img src={msg.text} alt="uploaded" className="chat-media" />
-          ) : msg.type === 'video' ? (
-            <video controls className="chat-media">
-              <source src={msg.text} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          ) : (
-            msg.text
-          )}
-        </div>
+ .map((msg, index) => (
+    <div
+      key={index}
+      className={`chat-bubble ${msg.sender === name ? 'you' : 'other'}`}
+    >
+      <div className="sender">{msg.sender}</div>
+      <div className="text">
+        {msg.type === 'image' ? (
+          <img src={msg.text} alt="uploaded" className="chat-media" />
+        ) : msg.type === 'video' ? (
+          <video controls className="chat-media">
+            <source src={msg.text} type="video/mp4" />
+            Your browser does not support the video tag.
+          </video>
+        ) : (
+          msg.text
+        )}
       </div>
-    ))}
+      <div className="msg-time">{formatTime(msg.time || msg.timestamp)}</div>
+    </div>
+  ))
+}
+    {isTyping && typingUser && (
+  <div className="typing-indicator">
+    {typingUser} is typing...
+  </div>
+)}
+{/* <span>{formatTime(user.lastMessageTime)}</span> */}
 </div>
-
-
       <div className="input-area">
         <input
           className="chat-input"
@@ -309,11 +436,12 @@ const handleFileChange = async (e) => {
           value={message}
           onChange={e => setMessage(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && sendMessage()}
+          onInput={handleTyping}
         />
-        
-  
 <label htmlFor="file-upload" className="file-upload-label">
   📎
+  {/* 🗂️ */}
+  {/* 📁 */}
 </label>
 <input
   id="file-upload"

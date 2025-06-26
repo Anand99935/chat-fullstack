@@ -22,6 +22,14 @@ const server = http.createServer(app);
 app.use(helmet());
 app.use(compression());
 
+// CORS configuration
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://chat-system-5.onrender.com",
+  "https://chat-system-5.onrender.com/",
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -29,13 +37,6 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);
-
-// CORS configuration
-const allowedOrigins = [
-  "http://localhost:3000",
-  "https://chat-system-5.onrender.com",
-  process.env.FRONTEND_URL
-].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {

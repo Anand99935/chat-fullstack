@@ -533,16 +533,26 @@ function App() {
   }, [selectedUser, isAdmin, name, socket]);
 
   // Typing indicator
-  const handleTyping = useCallback(({ sender }) => {
-    setTypingUser(sender);
-    setIsTyping(true);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
-  }, []);
-  const handleStopTyping = useCallback(() => {
-    setIsTyping(false);
-    setTypingUser('');
-  }, []);
+  const handleTyping = useCallback((data) => {
+    const { sender, receiver } = data;
+    // Only show typing indicator for relevant conversations
+    if ((isAdmin && selectedUser && sender === selectedUser.name) || 
+        (!isAdmin && sender === 'Admin')) {
+      setTypingUser(sender);
+      setIsTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
+    }
+  }, [isAdmin, selectedUser]);
+  const handleStopTyping = useCallback((data) => {
+    const { sender } = data;
+    // Only stop typing indicator for relevant conversations
+    if ((isAdmin && selectedUser && sender === selectedUser.name) || 
+        (!isAdmin && sender === 'Admin')) {
+      setIsTyping(false);
+      setTypingUser('');
+    }
+  }, [isAdmin, selectedUser]);
   const handleMessageError = useCallback(({ error }) => {
     setError(error);
     setTimeout(() => setError(''), 5000);
@@ -882,6 +892,8 @@ function App() {
       console.error('Failed to mark conversation as read:', err);
     }
   };
+
+
 
   // UI
   if (!loggedIn) {

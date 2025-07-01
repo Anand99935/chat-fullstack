@@ -59,10 +59,16 @@ const ADMIN_CREDENTIALS = {
 };
 
 // Cloudinary configuration
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.error('❌ Missing required Cloudinary environment variables');
+  console.error('Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET');
+  process.exit(1);
+}
+
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dtmfrtwy4',
-  api_key: process.env.CLOUDINARY_API_KEY || '629516584655468',
-  api_secret: process.env.CLOUDINARY_API_SECRET || '8k-EvIFA-ZcNDI-Po1M-8J6oQKw'
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 const storage = new CloudinaryStorage({
@@ -259,6 +265,42 @@ app.get("/api/conversation/:userEmail", async (req, res) => {
   } catch (err) {
     console.error('Error fetching conversation:', err);
     res.status(500).json({ error: "Failed to fetch conversation" });
+  }
+});
+
+// Get unread counts for a user
+app.get("/api/unread-counts/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email parameter is required' });
+    }
+
+    // For now, return empty unread counts as this would typically be stored in a separate collection
+    // In a real application, you'd have an UnreadCount model
+    res.json({ unreadCounts: {} });
+  } catch (err) {
+    console.error('Error fetching unread counts:', err);
+    res.status(500).json({ error: "Failed to fetch unread counts" });
+  }
+});
+
+// Mark conversation as read
+app.post("/api/mark-read", async (req, res) => {
+  try {
+    const { userEmail, senderEmail } = req.body;
+    
+    if (!userEmail || !senderEmail) {
+      return res.status(400).json({ error: 'userEmail and senderEmail are required' });
+    }
+
+    // In a real application, you would update the unread count in the database
+    // For now, we'll just return success as the functionality is handled client-side
+    res.json({ success: true, message: 'Conversation marked as read' });
+  } catch (err) {
+    console.error('Error marking conversation as read:', err);
+    res.status(500).json({ error: "Failed to mark conversation as read" });
   }
 });
 

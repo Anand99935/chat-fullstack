@@ -348,6 +348,28 @@ function App() {
       }
     }
     
+    // Load selectedUser from localStorage
+    const storedSelectedUser = localStorage.getItem('selectedUser');
+    if (storedSelectedUser) {
+      try {
+        const parsed = JSON.parse(storedSelectedUser);
+        setSelectedUser(parsed);
+      } catch (err) {
+        localStorage.removeItem('selectedUser');
+      }
+    }
+    
+    // Load chat messages from localStorage
+    const storedChat = localStorage.getItem('chatMessages');
+    if (storedChat) {
+      try {
+        const parsed = JSON.parse(storedChat);
+        setChat(parsed);
+      } catch (err) {
+        localStorage.removeItem('chatMessages');
+      }
+    }
+    
     // Load lastMessages from localStorage
     const storedLastMessages = localStorage.getItem('lastMessages');
     if (storedLastMessages) {
@@ -367,6 +389,15 @@ function App() {
       }
     }
   }, []);
+
+  // Save selectedUser to localStorage
+  useEffect(() => {
+    if (selectedUser) {
+      localStorage.setItem('selectedUser', JSON.stringify(selectedUser));
+    } else {
+      localStorage.removeItem('selectedUser');
+    }
+  }, [selectedUser]);
 
   // Save lastMessages to localStorage
   useEffect(() => {
@@ -494,7 +525,7 @@ function App() {
       const { sender, text } = msg;
       const isChatOpen = selectedUser?.name === sender;
       
-      // Update last messages
+      // Update last messages with current timestamp
       setLastMessages(prev => ({
         ...prev,
         [sender]: { text, time: new Date() }
@@ -505,17 +536,18 @@ function App() {
         setUnreadCounts(prev => ({ ...prev, [msg.senderEmail]: (prev[msg.senderEmail] || 0) + 1 }));
       }
       
-      // Update users list only if this is a new message (not from current user)
-      // and only move user to top if they're not already at top
+      // ALWAYS move user to top when they send a message (LIFO)
       if (msg.sender !== 'Admin') {
         setUsers(prev => {
           const updated = [...prev];
           const index = updated.findIndex(u => u.name === msg.sender);
-          if (index > 0) { // Only move if not already at top
+          if (index > -1) {
+            // Remove user from current position
             const [moved] = updated.splice(index, 1);
+            // Add to top
             return [moved, ...updated];
           }
-          return prev; // Return same array if no change needed (prevents re-render)
+          return updated;
         });
       }
     }
@@ -526,7 +558,20 @@ function App() {
         socket.emit('message-read', { 
           messageId: msg._id,
           user: selectedUser.name, 
-          admin: name 
+          admin: name,
+          sender: msg.sender,
+          receiver: msg.receiver
+        });
+      }, 500);
+    }
+    
+    // If user receives message and is not admin, mark as read
+    if (!isAdmin && msg.receiver === name) {
+      setTimeout(() => {
+        socket.emit('message-read', { 
+          messageId: msg._id,
+          sender: msg.sender,
+          receiver: msg.receiver
         });
       }, 500);
     }
@@ -568,6 +613,7 @@ function App() {
         : msg
     ));
   }, []);
+  
   const handleMessageRead = useCallback((data) => {
     setChat(prev => prev.map(msg => 
       msg._id === data.messageId 
@@ -655,7 +701,8 @@ function App() {
                 text: data.url,
                 type: file.type.startsWith('image') ? 'image' : 'video',
                 fileName: file.name,
-                fileSize: file.size
+                fileSize: file.size,
+                senderEmail: email
               });
               setUploadProgress(0);
             }
@@ -701,6 +748,7 @@ function App() {
       receiver,
       text: text.trim(),
       type,
+      senderEmail: email,
       timestamp: new Date()
     };
     socket.emit("send-message", messageData);
@@ -720,7 +768,7 @@ function App() {
         to: receiver
       });
     }, 1000);
-  }, [name, selectedUser, isAdmin, socket]);
+  }, [name, selectedUser, isAdmin, socket, email]);
 
   // Fetch messages
   const fetchMessages = async (reset = false) => {
@@ -883,6 +931,15 @@ function App() {
     }
   };
 
+  // Save chat messages to localStorage
+  useEffect(() => {
+    if (chat.length > 0) {
+      localStorage.setItem('chatMessages', JSON.stringify(chat));
+    } else {
+      localStorage.removeItem('chatMessages');
+    }
+  }, [chat]);
+
   // UI
   if (!loggedIn) {
     return (
@@ -919,7 +976,7 @@ function App() {
     return (
       <div className={`admin-users-list${darkMode ? ' dark' : ''}`}>
         <div className="admin-header">
-          <h2>Admin Panel</h2>
+          <h2>MyPursu Admin Panel</h2>
           <div className="admin-header-buttons">
             <button className="logout-btn" onClick={logout}>Logout</button>
             <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>

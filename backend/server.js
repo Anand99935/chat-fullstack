@@ -45,8 +45,9 @@ if (process.env.NODE_ENV === 'development') {
 // CORS configuration with better security
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://chat-system-5.onrender.com",
-  "https://*onrender.com",
+  "https://chat-fullstack-be.onrender.com"
+  // "https://*onrender.com"
+  ,
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -196,7 +197,8 @@ app.get("/health", (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     version: "1.0.0",
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    db : db.connection.name,
   };
   res.json(health);
 });
@@ -252,7 +254,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Enhanced MongoDB connection with better error handling
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://businesskeyutech:86vT98mp3O1oJmM0@cluster0.ramskda.mongodb.net/chatapp?retryWrites=true&w=majority';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chatuser:Anand%402965@cluster0.djdgr5p.mongodb.net/chatDB?retryWrites=true&w=majority&appName=Cluster0';
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -626,7 +628,7 @@ io.on("connection", (socket) => {
         timestamp: { $gte: new Date(Date.now() - 60000) }
       });
 
-      if (messageCount >= 10) {
+      if (messageCount >= 30) {
         socket.emit("message-error", { error: "Message rate limit exceeded" });
         return;
       }

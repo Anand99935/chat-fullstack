@@ -560,8 +560,10 @@ function App() {
           user: selectedUser.name, 
           admin: name,
           sender: msg.sender,
-          receiver: msg.receiver
+          receiver: msg.receiver,
+          timestamp: msg.timestamp
         });
+       console.log(msg)
       }, 500);
     }
     
@@ -798,7 +800,7 @@ function App() {
       setError('Failed to load messages');
     } finally {
       setLoading(false);
-    }
+        }
   };
 
   // Emoji picker
@@ -908,6 +910,7 @@ function App() {
         ...prev,
         [senderEmail]: 0
       }));
+      console.log('Unread count reset for', senderEmail);
     }
   }, [isAdmin, email]);
 
@@ -1008,9 +1011,8 @@ function App() {
                 <button
                   onClick={() => {
                     setSelectedUser(user);
-                    // Mark conversation as read when admin opens chat
                     markConversationAsRead(user.email);
-                    // setUnreadCounts(prev => ({ ...prev, [user.email]: 0 }));
+                    setUnreadCounts(prev => ({ ...prev, [user.email]: 0 }));
                   }}
                   className="user-button"
                 >

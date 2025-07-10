@@ -47,6 +47,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://chat-system-5.onrender.com",
   "https://*onrender.com",
+  "http://143.110.248.0:3000",
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -282,9 +283,10 @@ mongoose.connection.on('disconnected', () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   try {
-    await mongoose.connection.close();
+    await
+    //  mongoose.connection.close();
     console.log('✅ MongoDB connection closed through app termination');
-    process.exit(0);
+    // process.exit(0);
   } catch (err) {
     console.error('❌ Error during shutdown:', err);
     process.exit(1);

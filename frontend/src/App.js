@@ -262,6 +262,23 @@ const MediaMessage = ({ message, darkMode, onMediaClick }) => {
   );
 };
 
+function Loader() {
+  return (
+    <div className="upload-loader">
+      <div className="loading-spinner"></div>
+      <span>Uploading...</span>
+    </div>
+  );
+}
+
+function FullScreenLoader() {
+  return (
+    <div class="fullscreen-loader-overlay">
+    <div class="fullscreen-loading-spinner"></div>
+  </div>
+  );
+}
+
 function App() {
   // State
   const [message, setMessage] = useState('');
@@ -286,6 +303,7 @@ function App() {
   const [onlineUsers, setOnlineUsers] = useState({});
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   const chatBoxRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -663,13 +681,18 @@ function App() {
 
   // File upload with progress
   const handleFileChange = async (e) => {
+    setIsUploading(true);
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file) {
+      setIsUploading(false);
+      return;
+    }
 
     // File size validation (10MB limit)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
       setError('File size must be less than 10MB');
+      setIsUploading(false);
       return;
     }
 
@@ -726,6 +749,8 @@ function App() {
     } catch (err) {
       setError("File upload failed");
       setUploadProgress(0);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1043,137 +1068,146 @@ function App() {
   }
 
   return (
-    <div className={`chat-container${darkMode ? ' dark' : ''}`}>
-      <div className="chat-header">
-        {isAdmin && selectedUser ? (
-          <>
-            <button className="back-button" onClick={() => setSelectedUser(null)}>← Back</button>
-            <h3>{selectedUser.name}</h3>
-            {selectedUser.email && onlineUsers[selectedUser.email] && (
-              <span className="online-status"><FaCircle color="green" size={10} /> Online</span>
-            )}
-          </>
-        ) : (
-          <h3>💬 Chat with Mypursu</h3>
-        )}
-        <div className="header-buttons">
-          <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
-            {darkMode ? <FaSun /> : <FaMoon />}
-          </button>
-        </div>
-      </div>
-      {error && <div className="error-message">{error}</div>}
-      {uploadProgress > 0 && uploadProgress < 100 && (
-        <div className="upload-progress">
-          <div className="upload-progress-bar">
-            <div 
-              className="upload-progress-fill" 
-              style={{ width: `${uploadProgress}%` }}
-            ></div>
+    <>
+      {isUploading && <FullScreenLoader />}
+      <div className={`chat-container${darkMode ? ' dark' : ''}`}>
+        <div className="chat-header">
+          {isAdmin && selectedUser ? (
+            <>
+              <button className="back-button" onClick={() => setSelectedUser(null)}>← Back</button>
+              <h3>{selectedUser.name}</h3>
+              {selectedUser.email && onlineUsers[selectedUser.email] && (
+                <span className="online-status"><FaCircle color="green" size={10} /> Online</span>
+              )}
+            </>
+          ) : (
+            <h3>💬 Chat with Mypursu</h3>
+          )}
+          <div className="header-buttons">
+            <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
+              {darkMode ? <FaSun /> : <FaMoon />}
+            </button>
           </div>
-          <span>Uploading... {Math.round(uploadProgress)}%</span>
         </div>
-      )}
-      <div className="chat-box" ref={chatBoxRef} onScroll={handleScroll}>
-        {hasMore && !loading && (
-          <button onClick={() => fetchMessages(false)} className="load-more-btn">
-            Load older messages
-          </button>
-        )}
-        {loading && <div className="loading-indicator">Loading...</div>}
-        {chat
-          .filter((msg) => {
-            if (isAdmin && selectedUser) {
-              return (
-                (msg.sender === name && msg.receiver === selectedUser.name) ||
-                (msg.sender === selectedUser.name && msg.receiver === name)
-              );
-            } else if (!isAdmin) {
-              return (
-                (msg.sender === name && msg.receiver === 'Admin') ||
-                (msg.sender === 'Admin' && msg.receiver === name)
-              );
-            }
-            return false;
-          })
-          .map((msg, index) => (
-            <div
-              key={msg._id || index}
-              className={`chat-bubble ${msg.sender === name ? 'you' : 'other'}`}
-            >
-              <div className="sender">{msg.sender}</div>
-              <MediaMessage 
-                message={msg} 
-                darkMode={darkMode} 
-                onMediaClick={handleMediaClick}
-              />
-              <div className="msg-meta">
-                <span className="msg-time">{formatTime(msg.time || msg.timestamp)}</span>
-                {/* Enhanced Delivery/Read status */}
-                {msg.sender === name && (
-                  <span className="msg-status">
-                    {msg.status === 'read' || msg.read ? (
-                      <FaCheckDouble className="status-icon read" title="Read" />
-                    ) : msg.status === 'delivered' || msg.delivered ? (
-                      <FaCheckDouble className="status-icon delivered" title="Delivered" />
-                    ) : (
-                      <FaCheck className="status-icon sent" title="Sent" />
-                    )}
-                  </span>
-                )}
-              </div>
+        {error && <div className="error-message">{error}</div>}
+        {uploadProgress > 0 && uploadProgress < 100 && (
+          <div className="upload-progress">
+            <div className="upload-progress-bar">
+              <div 
+                className="upload-progress-fill" 
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
             </div>
-          ))
-        }
-        {isTyping && typingUser && (
-          <div className="typing-indicator">
-            {typingUser} is typing...
+            <span>Uploading... {Math.round(uploadProgress)}%</span>
           </div>
         )}
-      </div>
-      <div className="input-area">
-        <input
-          className="chat-input"
-          placeholder="Type your message..."
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendMessage(message)}
-          onInput={handleTypingInput}
-        />
-        {/* <button className="emoji-btn" onClick={() => setShowEmoji(e => !e)}>
-          <FaRegSmile />
-        </button> */}
-        {showEmoji && (
-          <div className="emoji-picker">
-            <Picker onSelect={addEmoji} theme={darkMode ? 'dark' : 'light'} />
-          </div>
+        <div className="chat-box" ref={chatBoxRef} onScroll={handleScroll}>
+          {hasMore && !loading && (
+            <button onClick={() => fetchMessages(false)} className="load-more-btn">
+              Load older messages
+            </button>
+          )}
+          {loading && <div className="loading-indicator">Loading...</div>}
+          {chat
+            .filter((msg) => {
+              if (isAdmin && selectedUser) {
+                return (
+                  (msg.sender === name && msg.receiver === selectedUser.name) ||
+                  (msg.sender === selectedUser.name && msg.receiver === name)
+                );
+              } else if (!isAdmin) {
+                return (
+                  (msg.sender === name && msg.receiver === 'Admin') ||
+                  (msg.sender === 'Admin' && msg.receiver === name)
+                );
+              }
+              return false;
+            })
+            .map((msg, index) => (
+              <div
+                key={msg._id || index}
+                className={`chat-bubble ${msg.sender === name ? 'you' : 'other'}`}
+              >
+                <div className="sender">{msg.sender}</div>
+                <MediaMessage 
+                  message={msg} 
+                  darkMode={darkMode} 
+                  onMediaClick={handleMediaClick}
+                />
+                <div className="msg-meta">
+                  <span className="msg-time">{formatTime(msg.time || msg.timestamp)}</span>
+                  {/* Enhanced Delivery/Read status */}
+                  {msg.sender === name && (
+                    <span className="msg-status">
+                      {msg.status === 'read' || msg.read ? (
+                        <FaCheckDouble className="status-icon read" title="Read" />
+                      ) : msg.status === 'delivered' || msg.delivered ? (
+                        <FaCheckDouble className="status-icon delivered" title="Delivered" />
+                      ) : (
+                        <FaCheck className="status-icon sent" title="Sent" />
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          }
+          {isTyping && typingUser && (
+            <div className="typing-indicator">
+              {typingUser} is typing...
+            </div>
+          )}
+        </div>
+        <div className="input-area">
+          <input
+            className="chat-input"
+            placeholder="Type your message..."
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && sendMessage(message)}
+            onInput={handleTypingInput}
+          />
+          {/* <button className="emoji-btn" onClick={() => setShowEmoji(e => !e)}>
+            <FaRegSmile />
+          </button> */}
+          {showEmoji && (
+            <div className="emoji-picker">
+              <Picker onSelect={addEmoji} theme={darkMode ? 'dark' : 'light'} />
+            </div>
+          )}
+          {isUploading ? (
+            <Loader />
+          ) : (
+            <>
+              <label htmlFor="file-upload" className="file-upload-label">
+                📎
+              </label>
+              <input
+                id="file-upload"
+                type="file"
+                accept="image/*,video/*"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+            </>
+          )}
+          <button className="send-button" onClick={() => sendMessage(message)}>➤</button>
+        </div>
+        <div className="footer">
+          <span className="user-label">User Name: {name}</span>
+          <button className="logout-btn" onClick={logout}>Logout</button>
+        </div>
+        
+        {/* Media Modal */}
+        {selectedMedia && (
+          <MediaModal 
+            media={selectedMedia} 
+            onClose={closeMediaModal} 
+            darkMode={darkMode}
+          />
         )}
-        <label htmlFor="file-upload" className="file-upload-label">
-          📎
-        </label>
-        <input
-          id="file-upload"
-          type="file"
-          accept="image/*,video/*"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-        />
-        <button className="send-button" onClick={() => sendMessage(message)}>➤</button>
       </div>
-      <div className="footer">
-        <span className="user-label">User Name: {name}</span>
-        <button className="logout-btn" onClick={logout}>Logout</button>
-      </div>
-      
-      {/* Media Modal */}
-      {selectedMedia && (
-        <MediaModal 
-          media={selectedMedia} 
-          onClose={closeMediaModal} 
-          darkMode={darkMode}
-        />
-      )}
-    </div>
+    </>
   );
 }
 

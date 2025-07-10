@@ -48,6 +48,8 @@ const allowedOrigins = [
   "https://chat-system-5.onrender.com",
   "https://*onrender.com",
   "http://143.110.248.0:3000",
+   "http://143.110.248.0:5000",
+  
   process.env.FRONTEND_URL
 ].filter(Boolean);
 

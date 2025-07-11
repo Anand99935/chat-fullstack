@@ -648,7 +648,8 @@ function App() {
   }, [hasMore, loading]);
 
   // Login
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+     e.preventDefault();
     if (!name.trim() || !email.trim()) {
       setError('Please enter both name and email');
       return;
@@ -677,7 +678,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  };   
 
   // File upload with progress
   const handleFileChange = async (e) => {

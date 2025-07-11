@@ -19,7 +19,7 @@ const User = require('./models/user');
 
 const app = express();
 const server = http.createServer(app);
-
+app.use(express.json()); 
 // Enhanced Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -48,7 +48,7 @@ const allowedOrigins = [
   "https://chat-system-5.onrender.com",
   "https://*onrender.com",
   "http://143.110.248.0:3000",
-   "http://143.110.248.0:5000",
+  //  "http://143.110.248.0:5000",
   
   process.env.FRONTEND_URL
 ].filter(Boolean);
@@ -795,6 +795,12 @@ app.use((req, res) => {
       users: "GET /api/users"
     }
   });
+});
+
+// Debug Logs
+app.use((req, res, next) => {
+  console.log(`[${req.method}] ${req.path}`);
+  next();
 });
 
 // Server start with better error handling

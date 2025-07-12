@@ -44,56 +44,37 @@ if (process.env.NODE_ENV === 'development') {
 
 // CORS configuration with better security
 const allowedOrigins = [
+  // "https://chat-backend-2-ukox.onrender.com",
+  // "https://chat-system-5.onrender.com",
   "http://localhost:3000",
-  "https://chat-system-5.onrender.com",
-  "https://*onrender.com",
   "http://143.110.248.0:3000",
-  //  "http://143.110.248.0:5000",
-  
-  process.env.FRONTEND_URL
+  process.env.FRONTEND_URL,
+  process.env.ALLOWED_ORIGIN
 ].filter(Boolean);
 
-// Enhanced Rate limiting with different limits for different endpoints
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: { error: 'Too many requests from this IP, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 login attempts per windowMs
-  message: { error: 'Too many login attempts, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const uploadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 uploads per windowMs
-  message: { error: 'Too many upload attempts, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use('/api/', generalLimiter);
-app.use('/api/login', authLimiter);
-app.use('/api/upload', uploadLimiter);
+console.log("🌐 Allowed Origins:", allowedOrigins);
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    console.log("🌐 Incoming Origin:", origin);
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log("✅ Allowing request with no origin");
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log("✅ Allowing origin:", origin);
       callback(null, true);
     } else {
-      console.warn(`Blocked request from unauthorized origin: ${origin}`);
+      console.warn(`❌ Blocked origin: ${origin}`);
+      console.warn("Allowed origins:", allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept']
 }));
 
 // Body parsing middleware with better limits
@@ -789,7 +770,7 @@ app.use((req, res) => {
     method: req.method,
     availableEndpoints: {
       health: "GET /health",
-      login: "POST /api/login",
+      login: "GET /api/login",
       upload: "POST /api/upload",
       messages: "GET /api/messages",
       users: "GET /api/users"
@@ -856,3 +837,11 @@ app.get("/api/test-admin", async (req, res) => {
     res.status(500).json({ error: "Failed to check admin user" });
   }
 });
+
+// Serves static files from the React app
+app.use(express.static(path.join(__dirname, "../frontend/build")));
+// Catch-all handler for other routes (React Router support)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/build", "index.html"));
+});
+

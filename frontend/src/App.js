@@ -943,7 +943,7 @@ function App() {
       const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userEmail: email, senderEmail })
+        body: JSON.stringify({ userEmail: email , senderEmail })
       });
       
       if (response.ok) {

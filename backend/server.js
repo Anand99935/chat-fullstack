@@ -44,10 +44,10 @@ if (process.env.NODE_ENV === 'development') {
 
 // CORS configuration with better security
 const allowedOrigins = [
-  // "https://chat-backend-2-ukox.onrender.com",
-  // "https://chat-system-5.onrender.com",
   "http://localhost:3000",
-  "http://143.110.248.0:3000",
+  "http://143.110.248.0:3000",  // ← Digital Ocean frontend
+  "https://143.110.248.0:3000", // ← HTTPS version
+  "http://143.110.248.0",       // ← Without port
   process.env.FRONTEND_URL,
   process.env.ALLOWED_ORIGIN
 ].filter(Boolean);
@@ -661,10 +661,12 @@ io.on("connection", (socket) => {
     socket.broadcast.emit("stop-typing", data);
   });
 
-  socket.on("message-delivered", async (data) => {
+  socket.on('message-delivered', async ({ messageId, to }) => {
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      console.warn('Skipping delivery update for temp messageId:', messageId);
+      return;
+    }
     try {
-      const { messageId, to } = data;
-      
       // Update message status in database
       const message = await Message.findById(messageId);
       if (message) {

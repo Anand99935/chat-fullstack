@@ -17,7 +17,11 @@ const createSocket = () => {
   return socket;
 };
 
-const socket = createSocket();
+const socket = io(process.env.REACT_APP_API_URL || "http://143.110.248.0:5000", {
+  transports: ["websocket"],
+});
+
+// const socket = createSocket();
 
 // Media Modal Component
 const MediaModal = ({ media, onClose, darkMode }) => {

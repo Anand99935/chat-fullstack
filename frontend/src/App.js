@@ -6,7 +6,7 @@ import { Picker } from 'emoji-mart';
 import { FaCheck, FaCheckDouble, FaRegSmile, FaMoon, FaSun, FaCircle, FaDownload, FaTimes, FaExpand, FaPlay } from 'react-icons/fa';
 
 const createSocket = () => {
-  const socket = io(process.env.REACT_APP_API_URL || 'http://143.110.248.0:5000', {
+  const socket = io(process.env.REACT_APP_API_URL , {
     transports: ['websocket'],
     withCredentials: true,
     timeout: 20000,
@@ -17,7 +17,7 @@ const createSocket = () => {
   return socket;
 };
 
-// const socket = createSocket();
+const socket = createSocket();
 
 // Media Modal Component
 const MediaModal = ({ media, onClose, darkMode }) => {

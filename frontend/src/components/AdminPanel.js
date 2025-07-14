@@ -5,7 +5,8 @@ import UserList from "./UserList";
 import ChatWindow from "./ChatWindow";
 import MessageInput from "./MessageInput";
 
-const socket = io("http://localhost:5000");
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const socket = io(API_URL);
 
 function AdminPanel() {
   const [users, setUsers] = useState([]);
@@ -34,12 +35,12 @@ function AdminPanel() {
   }, [selectedUser]);
 
   const fetchUsers = async () => {
-    const res = await axios.get("http://localhost:5000/users");
+    const res = await axios.get(`${API_URL}/users`);
     setUsers(res.data);
   };
 
   const fetchMessages = async (user) => {
-    const res = await axios.get(`http://localhost:5000/messages/${user}`);
+    const res = await axios.get(`${API_URL}/messages/${user}`);
     setMessages(res.data);
   };
 

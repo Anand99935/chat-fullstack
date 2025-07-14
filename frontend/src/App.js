@@ -262,6 +262,23 @@ const MediaMessage = ({ message, darkMode, onMediaClick }) => {
   );
 };
 
+function Loader() {
+  return (
+    <div className="upload-loader">
+      <div className="loading-spinner"></div>
+      <span>Uploading...</span>
+    </div>
+  );
+}
+
+function FullScreenLoader() {
+  return (
+    <div class="fullscreen-loader-overlay">
+    <div class="fullscreen-loading-spinner"></div>
+  </div>
+  );
+}
+
 function App() {
   // State
   const [message, setMessage] = useState('');
@@ -286,6 +303,7 @@ function App() {
   const [onlineUsers, setOnlineUsers] = useState({});
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   const chatBoxRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -348,6 +366,28 @@ function App() {
       }
     }
     
+    // Load selectedUser from localStorage
+    const storedSelectedUser = localStorage.getItem('selectedUser');
+    if (storedSelectedUser) {
+      try {
+        const parsed = JSON.parse(storedSelectedUser);
+        setSelectedUser(parsed);
+      } catch (err) {
+        localStorage.removeItem('selectedUser');
+      }
+    }
+    
+    // Load chat messages from localStorage
+    const storedChat = localStorage.getItem('chatMessages');
+    if (storedChat) {
+      try {
+        const parsed = JSON.parse(storedChat);
+        setChat(parsed);
+      } catch (err) {
+        localStorage.removeItem('chatMessages');
+      }
+    }
+    
     // Load lastMessages from localStorage
     const storedLastMessages = localStorage.getItem('lastMessages');
     if (storedLastMessages) {
@@ -367,6 +407,15 @@ function App() {
       }
     }
   }, []);
+
+  // Save selectedUser to localStorage
+  useEffect(() => {
+    if (selectedUser) {
+      localStorage.setItem('selectedUser', JSON.stringify(selectedUser));
+    } else {
+      localStorage.removeItem('selectedUser');
+    }
+  }, [selectedUser]);
 
   // Save lastMessages to localStorage
   useEffect(() => {
@@ -494,7 +543,7 @@ function App() {
       const { sender, text } = msg;
       const isChatOpen = selectedUser?.name === sender;
       
-      // Update last messages
+      // Update last messages with current timestamp
       setLastMessages(prev => ({
         ...prev,
         [sender]: { text, time: new Date() }
@@ -505,17 +554,18 @@ function App() {
         setUnreadCounts(prev => ({ ...prev, [msg.senderEmail]: (prev[msg.senderEmail] || 0) + 1 }));
       }
       
-      // Update users list only if this is a new message (not from current user)
-      // and only move user to top if they're not already at top
+      // ALWAYS move user to top when they send a message (LIFO)
       if (msg.sender !== 'Admin') {
         setUsers(prev => {
           const updated = [...prev];
           const index = updated.findIndex(u => u.name === msg.sender);
-          if (index > 0) { // Only move if not already at top
+          if (index > -1) {
+            // Remove user from current position
             const [moved] = updated.splice(index, 1);
+            // Add to top
             return [moved, ...updated];
           }
-          return prev; // Return same array if no change needed (prevents re-render)
+          return updated;
         });
       }
     }
@@ -526,33 +576,36 @@ function App() {
         socket.emit('message-read', { 
           messageId: msg._id,
           user: selectedUser.name, 
-          admin: name 
+          admin: name,
+          sender: msg.sender,
+          receiver: msg.receiver
+        });
+      }, 500);
+    }
+    
+    // If user receives message and is not admin, mark as read
+    if (!isAdmin && msg.receiver === name) {
+      setTimeout(() => {
+        socket.emit('message-read', { 
+          messageId: msg._id,
+          sender: msg.sender,
+          receiver: msg.receiver
         });
       }, 500);
     }
   }, [selectedUser, isAdmin, name, socket]);
 
   // Typing indicator
-  const handleTyping = useCallback((data) => {
-    const { sender, receiver } = data;
-    // Only show typing indicator for relevant conversations
-    if ((isAdmin && selectedUser && sender === selectedUser.name) || 
-        (!isAdmin && sender === 'Admin')) {
-      setTypingUser(sender);
-      setIsTyping(true);
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
-    }
-  }, [isAdmin, selectedUser]);
-  const handleStopTyping = useCallback((data) => {
-    const { sender } = data;
-    // Only stop typing indicator for relevant conversations
-    if ((isAdmin && selectedUser && sender === selectedUser.name) || 
-        (!isAdmin && sender === 'Admin')) {
-      setIsTyping(false);
-      setTypingUser('');
-    }
-  }, [isAdmin, selectedUser]);
+  const handleTyping = useCallback(({ sender }) => {
+    setTypingUser(sender);
+    setIsTyping(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
+  }, []);
+  const handleStopTyping = useCallback(() => {
+    setIsTyping(false);
+    setTypingUser('');
+  }, []);
   const handleMessageError = useCallback(({ error }) => {
     setError(error);
     setTimeout(() => setError(''), 5000);
@@ -578,6 +631,7 @@ function App() {
         : msg
     ));
   }, []);
+  
   const handleMessageRead = useCallback((data) => {
     setChat(prev => prev.map(msg => 
       msg._id === data.messageId 
@@ -594,7 +648,8 @@ function App() {
   }, [hasMore, loading]);
 
   // Login
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+     e.preventDefault();
     if (!name.trim() || !email.trim()) {
       setError('Please enter both name and email');
       return;
@@ -623,17 +678,22 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  };   
 
   // File upload with progress
   const handleFileChange = async (e) => {
+    setIsUploading(true);
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file) {
+      setIsUploading(false);
+      return;
+    }
 
     // File size validation (10MB limit)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
       setError('File size must be less than 10MB');
+      setIsUploading(false);
       return;
     }
 
@@ -665,7 +725,8 @@ function App() {
                 text: data.url,
                 type: file.type.startsWith('image') ? 'image' : 'video',
                 fileName: file.name,
-                fileSize: file.size
+                fileSize: file.size,
+                senderEmail: email
               });
               setUploadProgress(0);
             }
@@ -689,6 +750,8 @@ function App() {
     } catch (err) {
       setError("File upload failed");
       setUploadProgress(0);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -711,6 +774,7 @@ function App() {
       receiver,
       text: text.trim(),
       type,
+      senderEmail: email,
       timestamp: new Date()
     };
     socket.emit("send-message", messageData);
@@ -730,7 +794,7 @@ function App() {
         to: receiver
       });
     }, 1000);
-  }, [name, selectedUser, isAdmin, socket]);
+  }, [name, selectedUser, isAdmin, socket, email]);
 
   // Fetch messages
   const fetchMessages = async (reset = false) => {
@@ -879,7 +943,7 @@ function App() {
       const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userEmail: email, senderEmail })
+        body: JSON.stringify({ userEmail: email , senderEmail })
       });
       
       if (response.ok) {
@@ -893,7 +957,14 @@ function App() {
     }
   };
 
-
+  // Save chat messages to localStorage
+  useEffect(() => {
+    if (chat.length > 0) {
+      localStorage.setItem('chatMessages', JSON.stringify(chat));
+    } else {
+      localStorage.removeItem('chatMessages');
+    }
+  }, [chat]);
 
   // UI
   if (!loggedIn) {
@@ -931,7 +1002,7 @@ function App() {
     return (
       <div className={`admin-users-list${darkMode ? ' dark' : ''}`}>
         <div className="admin-header">
-          <h2>Admin Panel</h2>
+          <h2>MyPursu Admin Panel</h2>
           <div className="admin-header-buttons">
             <button className="logout-btn" onClick={logout}>Logout</button>
             <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
@@ -998,137 +1069,146 @@ function App() {
   }
 
   return (
-    <div className={`chat-container${darkMode ? ' dark' : ''}`}>
-      <div className="chat-header">
-        {isAdmin && selectedUser ? (
-          <>
-            <button className="back-button" onClick={() => setSelectedUser(null)}>← Back</button>
-            <h3>{selectedUser.name}</h3>
-            {selectedUser.email && onlineUsers[selectedUser.email] && (
-              <span className="online-status"><FaCircle color="green" size={10} /> Online</span>
-            )}
-          </>
-        ) : (
-          <h3>💬 Chat with Mypursu</h3>
-        )}
-        <div className="header-buttons">
-          <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
-            {darkMode ? <FaSun /> : <FaMoon />}
-          </button>
-        </div>
-      </div>
-      {error && <div className="error-message">{error}</div>}
-      {uploadProgress > 0 && uploadProgress < 100 && (
-        <div className="upload-progress">
-          <div className="upload-progress-bar">
-            <div 
-              className="upload-progress-fill" 
-              style={{ width: `${uploadProgress}%` }}
-            ></div>
+    <>
+      {isUploading && <FullScreenLoader />}
+      <div className={`chat-container${darkMode ? ' dark' : ''}`}>
+        <div className="chat-header">
+          {isAdmin && selectedUser ? (
+            <>
+              <button className="back-button" onClick={() => setSelectedUser(null)}>← Back</button>
+              <h3>{selectedUser.name}</h3>
+              {selectedUser.email && onlineUsers[selectedUser.email] && (
+                <span className="online-status"><FaCircle color="green" size={10} /> Online</span>
+              )}
+            </>
+          ) : (
+            <h3>💬 Chat with Mypursu</h3>
+          )}
+          <div className="header-buttons">
+            <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
+              {darkMode ? <FaSun /> : <FaMoon />}
+            </button>
           </div>
-          <span>Uploading... {Math.round(uploadProgress)}%</span>
         </div>
-      )}
-      <div className="chat-box" ref={chatBoxRef} onScroll={handleScroll}>
-        {hasMore && !loading && (
-          <button onClick={() => fetchMessages(false)} className="load-more-btn">
-            Load older messages
-          </button>
-        )}
-        {loading && <div className="loading-indicator">Loading...</div>}
-        {chat
-          .filter((msg) => {
-            if (isAdmin && selectedUser) {
-              return (
-                (msg.sender === name && msg.receiver === selectedUser.name) ||
-                (msg.sender === selectedUser.name && msg.receiver === name)
-              );
-            } else if (!isAdmin) {
-              return (
-                (msg.sender === name && msg.receiver === 'Admin') ||
-                (msg.sender === 'Admin' && msg.receiver === name)
-              );
-            }
-            return false;
-          })
-          .map((msg, index) => (
-            <div
-              key={msg._id || index}
-              className={`chat-bubble ${msg.sender === name ? 'you' : 'other'}`}
-            >
-              <div className="sender">{msg.sender}</div>
-              <MediaMessage 
-                message={msg} 
-                darkMode={darkMode} 
-                onMediaClick={handleMediaClick}
-              />
-              <div className="msg-meta">
-                <span className="msg-time">{formatTime(msg.time || msg.timestamp)}</span>
-                {/* Enhanced Delivery/Read status */}
-                {msg.sender === name && (
-                  <span className="msg-status">
-                    {msg.status === 'read' || msg.read ? (
-                      <FaCheckDouble className="status-icon read" title="Read" />
-                    ) : msg.status === 'delivered' || msg.delivered ? (
-                      <FaCheckDouble className="status-icon delivered" title="Delivered" />
-                    ) : (
-                      <FaCheck className="status-icon sent" title="Sent" />
-                    )}
-                  </span>
-                )}
-              </div>
+        {error && <div className="error-message">{error}</div>}
+        {uploadProgress > 0 && uploadProgress < 100 && (
+          <div className="upload-progress">
+            <div className="upload-progress-bar">
+              <div 
+                className="upload-progress-fill" 
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
             </div>
-          ))
-        }
-        {isTyping && typingUser && (
-          <div className="typing-indicator">
-            {typingUser} is typing...
+            <span>Uploading... {Math.round(uploadProgress)}%</span>
           </div>
         )}
-      </div>
-      <div className="input-area">
-        <input
-          className="chat-input"
-          placeholder="Type your message..."
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendMessage(message)}
-          onInput={handleTypingInput}
-        />
-        {/* <button className="emoji-btn" onClick={() => setShowEmoji(e => !e)}>
-          <FaRegSmile />
-        </button> */}
-        {showEmoji && (
-          <div className="emoji-picker">
-            <Picker onSelect={addEmoji} theme={darkMode ? 'dark' : 'light'} />
-          </div>
+        <div className="chat-box" ref={chatBoxRef} onScroll={handleScroll}>
+          {hasMore && !loading && (
+            <button onClick={() => fetchMessages(false)} className="load-more-btn">
+              Load older messages
+            </button>
+          )}
+          {loading && <div className="loading-indicator">Loading...</div>}
+          {chat
+            .filter((msg) => {
+              if (isAdmin && selectedUser) {
+                return (
+                  (msg.sender === name && msg.receiver === selectedUser.name) ||
+                  (msg.sender === selectedUser.name && msg.receiver === name)
+                );
+              } else if (!isAdmin) {
+                return (
+                  (msg.sender === name && msg.receiver === 'Admin') ||
+                  (msg.sender === 'Admin' && msg.receiver === name)
+                );
+              }
+              return false;
+            })
+            .map((msg, index) => (
+              <div
+                key={msg._id || index}
+                className={`chat-bubble ${msg.sender === name ? 'you' : 'other'}`}
+              >
+                <div className="sender">{msg.sender}</div>
+                <MediaMessage 
+                  message={msg} 
+                  darkMode={darkMode} 
+                  onMediaClick={handleMediaClick}
+                />
+                <div className="msg-meta">
+                  <span className="msg-time">{formatTime(msg.time || msg.timestamp)}</span>
+                  {/* Enhanced Delivery/Read status */}
+                  {msg.sender === name && (
+                    <span className="msg-status">
+                      {msg.status === 'read' || msg.read ? (
+                        <FaCheckDouble className="status-icon read" title="Read" />
+                      ) : msg.status === 'delivered' || msg.delivered ? (
+                        <FaCheckDouble className="status-icon delivered" title="Delivered" />
+                      ) : (
+                        <FaCheck className="status-icon sent" title="Sent" />
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          }
+          {isTyping && typingUser && (
+            <div className="typing-indicator">
+              {typingUser} is typing...
+            </div>
+          )}
+        </div>
+        <div className="input-area">
+          <input
+            className="chat-input"
+            placeholder="Type your message..."
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && sendMessage(message)}
+            onInput={handleTypingInput}
+          />
+          {/* <button className="emoji-btn" onClick={() => setShowEmoji(e => !e)}>
+            <FaRegSmile />
+          </button> */}
+          {showEmoji && (
+            <div className="emoji-picker">
+              <Picker onSelect={addEmoji} theme={darkMode ? 'dark' : 'light'} />
+            </div>
+          )}
+          {isUploading ? (
+            <Loader />
+          ) : (
+            <>
+              <label htmlFor="file-upload" className="file-upload-label">
+                📎
+              </label>
+              <input
+                id="file-upload"
+                type="file"
+                accept="image/*,video/*"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+            </>
+          )}
+          <button className="send-button" onClick={() => sendMessage(message)}>➤</button>
+        </div>
+        <div className="footer">
+          <span className="user-label">User Name: {name}</span>
+          <button className="logout-btn" onClick={logout}>Logout</button>
+        </div>
+        
+        {/* Media Modal */}
+        {selectedMedia && (
+          <MediaModal 
+            media={selectedMedia} 
+            onClose={closeMediaModal} 
+            darkMode={darkMode}
+          />
         )}
-        <label htmlFor="file-upload" className="file-upload-label">
-          📎
-        </label>
-        <input
-          id="file-upload"
-          type="file"
-          accept="image/*,video/*"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-        />
-        <button className="send-button" onClick={() => sendMessage(message)}>➤</button>
       </div>
-      <div className="footer">
-        <span className="user-label">User Name: {name}</span>
-        <button className="logout-btn" onClick={logout}>Logout</button>
-      </div>
-      
-      {/* Media Modal */}
-      {selectedMedia && (
-        <MediaModal 
-          media={selectedMedia} 
-          onClose={closeMediaModal} 
-          darkMode={darkMode}
-        />
-      )}
-    </div>
+    </>
   );
 }
 

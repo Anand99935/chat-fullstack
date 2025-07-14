@@ -795,6 +795,11 @@ server.listen(PORT, () => {
   console.log(`💾 Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
 });
 
+// Server allowed origin fron any ip address
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 // Handle server errors
 server.on('error', (error) => {
   if (error.syscall !== 'listen') {

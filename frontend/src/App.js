@@ -489,7 +489,7 @@ function App() {
   // Fetch users
   const fetchUsers = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/users-with-last-message`);
+      const response = await fetch(`${process.env.REACT_APP_API_URL }/api/users-with-last-message`);
       if (!response.ok) throw new Error('Failed to fetch users');
       const data = await response.json();
       
@@ -658,7 +658,7 @@ function App() {
     setError('');
     const isAdminLogin = name === 'Admin' && email === 'admin@chat.com';
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/login`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, isAdmin: isAdminLogin })
@@ -745,7 +745,7 @@ function App() {
         setUploadProgress(0);
       });
 
-      xhr.open('POST', `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/upload`);
+      xhr.open('POST', `${process.env.REACT_APP_API_URL }/api/upload`);
       xhr.send(formData);
     } catch (err) {
       setError("File upload failed");
@@ -804,7 +804,7 @@ function App() {
       const user1 = isAdmin ? name : 'Admin';
       const user2 = isAdmin ? selectedUser?.name : name;
       const response = await fetch(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
+        `${process.env.REACT_APP_API_URL}/api/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
       );
       if (!response.ok) throw new Error('Failed to fetch messages');
       const data = await response.json();
@@ -906,7 +906,7 @@ function App() {
   // Fetch unread counts from database
   const fetchUnreadCounts = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/unread-counts/${email}`);
+      const response = await fetch(`${process.env.REACT_APP_API_URL }/api/unread-counts/${email}`);
       if (response.ok) {
         const data = await response.json();
         setUnreadCounts(data.unreadCounts || {});
@@ -940,7 +940,7 @@ function App() {
   // Mark conversation as read
   const markConversationAsRead = async (senderEmail) => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/mark-read`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL }/api/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userEmail: email , senderEmail })

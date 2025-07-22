@@ -19,6 +19,28 @@ const User = require('./models/user');
 
 const app = express();
 const server = http.createServer(app);
+const fs = require('fs');
+const https = require('https');
+
+const options = {
+  key: fs.readFileSync('./ssl/key.pem'),
+  cert: fs.readFileSync('./ssl/cert.pem')
+};
+
+// const server = https.createServer(options, app);
+const httpsServer = https.createServer(options, app);
+httpsServer.listen(443, () => {
+  console.log('HTTPS Server running on port 443');
+});
+
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(301, { Location: 'https://' + req.headers.host + req.url });
+  res.end();
+});
+httpServer.listen(80, () => {
+  console.log('HTTP Server running on port 80 and redirecting to HTTPS');
+});
+
 app.use(express.json()); 
 // Enhanced Security middleware
 app.use(helmet({
@@ -41,6 +63,11 @@ if (process.env.NODE_ENV === 'development') {
 } else {
   app.use(morgan('combined'));
 }
+
+const sslOptions = {
+  key: fs.readFileSync(path.join(__dirname, 'ssl', 'key.pem')),
+  cert: fs.readFileSync(path.join(__dirname, 'ssl', 'cert.pem'))
+};
 
 // CORS configuration with better security
 const allowedOrigins = [
@@ -772,7 +799,7 @@ app.use((req, res) => {
     method: req.method,
     availableEndpoints: {
       health: "GET /health",
-      login: "GET /api/login",
+      login: "POST /api/login",
       upload: "POST /api/upload",
       messages: "GET /api/messages",
       users: "GET /api/users"
@@ -787,7 +814,7 @@ app.use((req, res, next) => {
 });
 
 // Server start with better error handling
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);

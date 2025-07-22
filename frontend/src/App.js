@@ -1,12 +1,24 @@
 import './App.css';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client"; 
 import { Picker } from 'emoji-mart';
 // import 'emoji-mart/css/emoji-mart.css';
 import { FaCheck, FaCheckDouble, FaRegSmile, FaMoon, FaSun, FaCircle, FaDownload, FaTimes, FaExpand, FaPlay } from 'react-icons/fa';
 
+// Make these available everywhere in the file
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const isSecure = window.location.protocol === 'https:';
+
 const createSocket = () => {
-  const socket = io(process.env.REACT_APP_API_URL || 'http://localhost:3000', {
+  let url;
+
+  if (isLocalhost) {
+    url = isSecure ? 'wss://localhost:5000' : 'ws://localhost:5000';
+  } else {
+    url = 'wss://143.110.248.0:5000'; 
+  }
+
+  const socket = io(url, {
     transports: ['websocket'],
     withCredentials: true,
     timeout: 20000,
@@ -14,14 +26,10 @@ const createSocket = () => {
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
   });
+
   return socket;
 };
-
 const socket = createSocket();
-
-// const socket = io(process.env.REACT_APP_API_URL || "http://143.110.248.0:5000", {
-//   transports: ["websocket"],
-// });
 
 // Media Modal Component
 const MediaModal = ({ media, onClose, darkMode }) => {
@@ -151,6 +159,7 @@ const MediaMessage = ({ message, darkMode, onMediaClick }) => {
       });
     }
   };
+
 
   const handleDownload = (e) => {
     e.stopPropagation();
@@ -662,7 +671,10 @@ function App() {
     setError('');
     const isAdminLogin = name === 'Admin' && email === 'admin@chat.com';
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/login`, {
+      const API_URL = isLocalhost
+        ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
+        : 'https://143.110.248.0'; // or add :5000 if needed
+      const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, isAdmin: isAdminLogin })
@@ -807,8 +819,11 @@ function App() {
     try {
       const user1 = isAdmin ? name : 'Admin';
       const user2 = isAdmin ? selectedUser?.name : name;
+      const API_URL = isLocalhost
+        ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
+        : 'https://143.110.248.0'; // or add :5000 if needed
       const response = await fetch(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
+        `${API_URL}/api/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
       );
       if (!response.ok) throw new Error('Failed to fetch messages');
       const data = await response.json();
@@ -910,7 +925,10 @@ function App() {
   // Fetch unread counts from database
   const fetchUnreadCounts = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/unread-counts/${email}`);
+      const API_URL = isLocalhost
+        ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
+        : 'https://143.110.248.0:5000';
+      const response = await fetch(`${API_URL}/api/unread-counts/${email}`);
       if (response.ok) {
         const data = await response.json();
         setUnreadCounts(data.unreadCounts || {});
@@ -944,7 +962,10 @@ function App() {
   // Mark conversation as read
   const markConversationAsRead = async (senderEmail) => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/mark-read`, {
+      const API_URL = isLocalhost
+        ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
+        : 'https://143.110.248.0:5000'; // or add :5000 if needed
+      const response = await fetch(`${API_URL}/api/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userEmail: email , senderEmail })
@@ -982,14 +1003,14 @@ function App() {
             value={name}
             placeholder="Enter your name"
             onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            onKeyDown={e => e.key === 'Enter' && handleLogin(e)}
           />
           <input
             type="email"
             value={email}
             placeholder="Enter your email"
             onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            onKeyDown={e => e.key === 'Enter' && handleLogin(e)}
           />
           <button onClick={handleLogin} disabled={isLoading}>
             {isLoading ? 'Logging in...' : 'Login'}

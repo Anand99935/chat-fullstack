@@ -13,9 +13,10 @@ const createSocket = () => {
   let url;
 
   if (isLocalhost) {
-    url = isSecure ? 'wss://localhost:5000' : 'ws://localhost:5000';
+    url = 'ws://localhost:5000' ;
   } else {
-    url = 'wss://143.110.248.0:5000'; 
+    // url = 'wss://143.110.248.0:5000'; 
+    url = 'ws://143.110.248.0:5000';
   }
 
   const socket = io(url, {

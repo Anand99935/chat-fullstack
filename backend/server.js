@@ -22,25 +22,6 @@ const server = http.createServer(app);
 const fs = require('fs');
 const https = require('https');
 
-const options = {
-  key: fs.readFileSync('./ssl/key.pem'),
-  cert: fs.readFileSync('./ssl/cert.pem')
-};
-
-// const server = https.createServer(options, app);
-const httpsServer = https.createServer(options, app);
-httpsServer.listen(443, () => {
-  console.log('HTTPS Server running on port 443');
-});
-
-const httpServer = http.createServer((req, res) => {
-  res.writeHead(301, { Location: 'https://' + req.headers.host + req.url });
-  res.end();
-});
-httpServer.listen(80, () => {
-  console.log('HTTP Server running on port 80 and redirecting to HTTPS');
-});
-
 app.use(express.json()); 
 // Enhanced Security middleware
 app.use(helmet({
@@ -64,17 +45,24 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-const sslOptions = {
+const options = {
   key: fs.readFileSync(path.join(__dirname, 'ssl', 'key.pem')),
   cert: fs.readFileSync(path.join(__dirname, 'ssl', 'cert.pem'))
 };
+// const httpsServer = https.createServer(options, app);
+
+// httpsServer.listen(4000, () => {
+//   console.log('HTTPS Server running on port 443');
+// });
 
 // CORS configuration with better security
 const allowedOrigins = [
   "http://localhost:3000",
   "http://143.110.248.0:3000",  // ← Digital Ocean frontend
-  "https://143.110.248.0:3000", // ← HTTPS version
+  // "https://143.110.248.0:3000", // ← HTTPS version
   "http://143.110.248.0",       // ← Without port
+  "https://365evite.com",
+  "https://www.365evite.com",
   process.env.FRONTEND_URL,
   process.env.ALLOWED_ORIGIN
 ].filter(Boolean);
@@ -813,13 +801,19 @@ app.use((req, res, next) => {
   next();
 });
 
+
 // Server start with better error handling
-const PORT = process.env.PORT || 5000;
+// const PORT = process.env.PORT || 5000;
+// server.listen(PORT, '0.0.0.0', () => {
+//   console.log(`🚀 Server running on port ${PORT}`);
+//   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+//   console.log(`🔒 Security: ${process.env.NODE_ENV === 'production' ? 'Enabled' : 'Development mode'}`);
+//   console.log(`💾 Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
+// });
+
+const PORT = process.env.port || 5000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔒 Security: ${process.env.NODE_ENV === 'production' ? 'Enabled' : 'Development mode'}`);
-  console.log(`💾 Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
 });
 
 // Test endpoint to check admin user
@@ -851,4 +845,3 @@ app.use(express.static(path.join(__dirname, "../frontend/build")));
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../frontend/build", "index.html"));
 });
-

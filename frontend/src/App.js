@@ -11,14 +11,11 @@ const isSecure = window.location.protocol === 'https:';
 
 const createSocket = () => {
   let url;
-
   if (isLocalhost) {
     url = 'ws://localhost:5000' ;
   } else {
-    // url = 'wss://143.110.248.0:5000'; 
-    url = 'ws://143.110.248.0:5000';
+    url = 'wss://chats.dronanatural.com/socket.io/';
   }
-
   const socket = io(url, {
     transports: ['websocket'],
     withCredentials: true,
@@ -674,7 +671,7 @@ function App() {
     try {
       const API_URL = isLocalhost
         ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
-        : 'https://143.110.248.0'; // or add :5000 if needed
+        : 'https://chats.dronanatural.com:8443'; 
       const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -822,7 +819,7 @@ function App() {
       const user2 = isAdmin ? selectedUser?.name : name;
       const API_URL = isLocalhost
         ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
-        : 'https://143.110.248.0'; // or add :5000 if needed
+        : 'https://chats.dronanatural.com:8443';
       const response = await fetch(
         `${API_URL}/api/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
       );
@@ -928,7 +925,7 @@ function App() {
     try {
       const API_URL = isLocalhost
         ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
-        : 'https://143.110.248.0:5000';
+        : 'https://chats.dronanatural.com:8443';
       const response = await fetch(`${API_URL}/api/unread-counts/${email}`);
       if (response.ok) {
         const data = await response.json();
@@ -965,7 +962,7 @@ function App() {
     try {
       const API_URL = isLocalhost
         ? (isSecure ? 'https://localhost:5000' : 'http://localhost:5000')
-        : 'https://143.110.248.0:5000'; // or add :5000 if needed
+        : 'https://chats.dronanatural.com:8443'; 
       const response = await fetch(`${API_URL}/api/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

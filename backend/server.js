@@ -45,24 +45,31 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
+// This will enable the backend to run on HTTPS
 const options = {
-  key: fs.readFileSync(path.join(__dirname, 'ssl', 'key.pem')),
-  cert: fs.readFileSync(path.join(__dirname, 'ssl', 'cert.pem'))
+  key: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem')
 };
-// const httpsServer = https.createServer(options, app);
+const PORT = process.env.PORT || 8443;
+const httpsServer = https.createServer(options, app);
+httpsServer.listen(PORT, () => {
+  console.log(`Server is running on https://localhost:${PORT}`);
+});
 
-// httpsServer.listen(4000, () => {
-//   console.log('HTTPS Server running on port 443');
-// });
+//This will redirect HTTP traffic to HTTPS 
+http.createServer((req, res) => {
+  res.writeHead(301, { Location: "https://" + req.headers.host + req.url });
+  res.end();
+}).listen(80);
 
 // CORS configuration with better security
 const allowedOrigins = [
   "http://localhost:3000",
   "http://143.110.248.0:3000",  // ← Digital Ocean frontend
-  // "https://143.110.248.0:3000", // ← HTTPS version
+  "https://143.110.248.0:3000", // ← HTTPS version
   "http://143.110.248.0",       // ← Without port
-  "https://365evite.com",
-  "https://www.365evite.com",
+  "https://chats.dronalnatural.com",
+  "https://www.chats.dronanatural.com",//dronanatural domain added
   process.env.FRONTEND_URL,
   process.env.ALLOWED_ORIGIN
 ].filter(Boolean);
@@ -552,7 +559,7 @@ app.get("/api/conversation/:userEmail", async (req, res) => {
 });
 
 // Enhanced Socket.IO setup with better configuration
-const io = new Server(server, {
+const io = new Server(httpsServer, {
   cors: {
     origin: allowedOrigins,
     credentials: true,
@@ -799,21 +806,6 @@ app.use((req, res) => {
 app.use((req, res, next) => {
   console.log(`[${req.method}] ${req.path}`);
   next();
-});
-
-
-// Server start with better error handling
-// const PORT = process.env.PORT || 5000;
-// server.listen(PORT, '0.0.0.0', () => {
-//   console.log(`🚀 Server running on port ${PORT}`);
-//   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-//   console.log(`🔒 Security: ${process.env.NODE_ENV === 'production' ? 'Enabled' : 'Development mode'}`);
-//   console.log(`💾 Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
-// });
-
-const PORT = process.env.port || 5000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
 });
 
 // Test endpoint to check admin user

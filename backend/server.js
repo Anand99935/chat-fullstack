@@ -17,23 +17,78 @@ const cloudinary = require('cloudinary').v2;
 const Message = require('./models/message');
 const User = require('./models/user');
 
+const fs = require('fs');
 const app = express();
-const server = http.createServer(app);
+// const server = http.createServer(app);
+let server;
+let io;
+const PORT = process.env.PORT || 8443;
+// CORS configuration with better security
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://143.110.248.0:3000",  // ← Digital Ocean frontend
+  "https://143.110.248.0:3000", // ← HTTPS version
+  "http://143.110.248.0",      
+  "https://chats.dronanatural.com",
+  "https://www.dronanatural.com",
+  process.env.FRONTEND_URL,
+  process.env.ALLOWED_ORIGIN
+].filter(Boolean);
+
+console.log("🌐 Allowed Origins:", allowedOrigins);
+
+if (process.env.NODE_ENV === 'production') {
+  const sslOptions = {
+    key: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem'),
+    cert: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem'),
+  };
+  server = https.createServer(sslOptions, app);
+  console.log("🔒 Using HTTPS (production)");
+} else {
+  server = http.createServer(app);
+  console.log("🔓 Using HTTP (development)");
+}
+
+// ✅ Define io after server is initialized
+io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST"]
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  maxHttpBufferSize: 1e8 // 100MB
+});
+
+server.listen(443, () => {
+  console.log('🚀 Server running on port 443');
+});
+
+
 app.use(express.json()); 
 // Enhanced Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      connectSrc: [
+        "'self'",
+        "https://chats.dronanatural.com", // allow API + websocket
+        "wss://chats.dronanatural.com",   // allow websocket
+      ],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       mediaSrc: ["'self'", "https:", "blob:"],
+      fontSrc: ["'self'", "https:", "data:"],
+      frameSrc: ["'self'"],
     },
   },
   crossOriginEmbedderPolicy: false,
 }));
-app.use(compression());
 
 // Logging middleware
 if (process.env.NODE_ENV === 'development') {
@@ -42,17 +97,38 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// CORS configuration with better security
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://143.110.248.0:3000",  // ← Digital Ocean frontend
-  "https://143.110.248.0:3000", // ← HTTPS version
-  "http://143.110.248.0",       // ← Without port
-  process.env.FRONTEND_URL,
-  process.env.ALLOWED_ORIGIN
-].filter(Boolean);
 
-console.log("🌐 Allowed Origins:", allowedOrigins);
+if (process.env.NODE_ENV === 'production') {
+  const sslOptions = {
+    key: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem'),
+    cert: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem'),
+  };
+  server = require('https').createServer(sslOptions, app);
+  io = new Server(server, {
+    cors: {
+      origin: allowedOrigins,
+      credentials: true,
+    }
+  });
+  console.log("🔒 Using HTTPS (production)");
+} else {
+  server = require('http').createServer(app);
+  io = new Server(server, {
+    cors: {
+      origin: allowedOrigins,
+      credentials: true,
+    }
+  });
+  console.log("🔓 Using HTTP (development)");
+}
+
+
+
+// 🌐 Serve React build
+app.use(express.static(path.join(__dirname, '../frontend/build')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
+});
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -236,7 +312,8 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Enhanced MongoDB connection with better error handling
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://businesskeyutech:86vT98mp3O1oJmM0@cluster0.ramskda.mongodb.net/chatapp?retryWrites=true&w=majority';
+// const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chatuser:CMq6bcHK@cluster0.djdgr5p.mongodb.net/chatDB?retryWrites=true&w=majority';
+const MONGODB_URI = process.env.MONGODB_URI  ; 
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -266,10 +343,9 @@ mongoose.connection.on('disconnected', () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   try {
-    await
-    //  mongoose.connection.close();
+    await mongoose.connection.close(); 
     console.log('✅ MongoDB connection closed through app termination');
-    // process.exit(0);
+    process.exit(0); 
   } catch (err) {
     console.error('❌ Error during shutdown:', err);
     process.exit(1);
@@ -537,18 +613,18 @@ app.get("/api/conversation/:userEmail", async (req, res) => {
 });
 
 // Enhanced Socket.IO setup with better configuration
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ["GET", "POST"]
-  },
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  transports: ['websocket', 'polling'],
-  allowEIO3: true,
-  maxHttpBufferSize: 1e8 // 100MB
-});
+// const io = new Server(server, {
+//   cors: {
+//     origin: allowedOrigins,
+//     credentials: true,
+//     methods: ["GET", "POST"]
+//   },
+//   pingTimeout: 60000,
+//   pingInterval: 25000,
+//   transports: ['websocket', 'polling'],
+//   allowEIO3: true,
+//   maxHttpBufferSize: 1e8 // 100MB
+// });
 
 // Socket.IO connection handling with enhanced features
 io.on("connection", (socket) => {
@@ -786,15 +862,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Server start with better error handling
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔒 Security: ${process.env.NODE_ENV === 'production' ? 'Enabled' : 'Development mode'}`);
-  console.log(`💾 Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
-});
-
 // Test endpoint to check admin user
 app.get("/api/test-admin", async (req, res) => {
   try {
@@ -816,12 +883,5 @@ app.get("/api/test-admin", async (req, res) => {
     console.error('Error checking admin user:', err);
     res.status(500).json({ error: "Failed to check admin user" });
   }
-});
-
-// Serves static files from the React app
-app.use(express.static(path.join(__dirname, "../frontend/build")));
-// Catch-all handler for other routes (React Router support)
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/build", "index.html"));
 });
 

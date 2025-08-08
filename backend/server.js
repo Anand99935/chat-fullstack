@@ -3,12 +3,14 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const http = require("http");
+const https = require("https");
 const { Server } = require("socket.io");
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
 const path = require('path');
+const fs = require('fs');
 
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -17,68 +19,119 @@ const cloudinary = require('cloudinary').v2;
 const Message = require('./models/message');
 const User = require('./models/user');
 
-const fs = require('fs');
 const app = express();
-// const server = http.createServer(app);
-let server;
-let io;
-const PORT = process.env.PORT || 8443;
-// CORS configuration with better security
+app.set('trust proxy', 1);
+
+// ===== PROPER ENVIRONMENT DETECTION =====
+// Check if we're actually on the production server (not just NODE_ENV)
+const isActualProduction = () => {
+  // Check if SSL certificates exist (only on production server)
+  const sslKeyExists = fs.existsSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem');
+  const sslCertExists = fs.existsSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem');
+  
+  // Check if we're on the actual production server by hostname or other indicators
+  const hostname = require('os').hostname();
+  const isProductionServer = hostname.includes('droplet') || // DigitalOcean
+                            hostname.includes('ubuntu') ||   // Common VPS
+                            process.env.SERVER_TYPE === 'production';
+  
+  return sslKeyExists && sslCertExists && (process.env.NODE_ENV === 'production' || isProductionServer);
+};
+
+// Set environment based on actual conditions
+const ACTUAL_ENVIRONMENT = isActualProduction() ? 'production' : 'development';
+console.log(`🔍 Detected Environment: ${ACTUAL_ENVIRONMENT}`);
+console.log(`📋 NODE_ENV: ${process.env.NODE_ENV || 'undefined'}`);
+console.log(`💻 Hostname: $app.use(cors{require('os').hostname()}`);
+
+// CORS configuration
 const allowedOrigins = [
-  "http://localhost:3000",
-  "http://143.110.248.0:3000",  // ← Digital Ocean frontend
-  "https://143.110.248.0:3000", // ← HTTPS version
-  "http://143.110.248.0",      
   "https://chats.dronanatural.com",
   "https://www.dronanatural.com",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://143.110.248.0:5000", // Droplet IP
+  "wss://chats.dronanatural.com",
+  "https://143.110.248.0",
   process.env.FRONTEND_URL,
   process.env.ALLOWED_ORIGIN
 ].filter(Boolean);
 
 console.log("🌐 Allowed Origins:", allowedOrigins);
 
-if (process.env.NODE_ENV === 'production') {
-  const sslOptions = {
-    key: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem'),
-    cert: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem'),
-  };
-  server = https.createServer(sslOptions, app);
-  console.log("🔒 Using HTTPS (production)");
+// ===== SMART SERVER INITIALIZATION =====
+let server;
+
+if (ACTUAL_ENVIRONMENT === 'production') {
+  try {
+    // SSL files before creating HTTPS server
+    const sslKeyPath = '/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem';
+    const sslCertPath = '/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem';
+    
+    if (fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath)) {
+      const sslOptions = {
+        key: fs.readFileSync(sslKeyPath),
+        cert: fs.readFileSync(sslCertPath),
+      };
+      server = https.createServer(sslOptions, app);
+      console.log("🔒 Using HTTPS (production with SSL)");
+    } else {
+      throw new Error('SSL certificates not found');
+    }
+  } catch (err) {
+    console.error("❌ SSL setup failed:", err.message);
+    // server = http.createServer(app);
+    console.log("⚠️ Fallback to HTTP (SSL unavailable)");
+  }
 } else {
   server = http.createServer(app);
-  console.log("🔓 Using HTTP (development)");
+console.log("🔓 Using HTTP (behind NGINX reverse proxy)");
 }
 
-// ✅ Define io after server is initialized
-io = new Server(server, {
+// Always use HTTP for backend when behind reverse proxy
+server = http.createServer(app);
+console.log("🔓 Using HTTP (behind NGINX reverse proxy)");
+
+// Initialize Socket.IO
+// const io = new Server(server, {
+//   cors: {
+//     origin: allowedOrigins ,
+//     methods: ["GET", "POST"],
+//     credentials: true,
+//   },
+//   pingTimeout: 60000,
+//   pingInterval: 25000,
+//   transports: ['websocket', 'polling'],
+//   allowEIO3: true,
+//   maxHttpBufferSize: 1e8,
+// });
+
+const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
-    credentials: true,
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   },
-  pingTimeout: 60000,
-  pingInterval: 25000,
+  path: "/socket.io/",
   transports: ['websocket', 'polling'],
   allowEIO3: true,
-  maxHttpBufferSize: 1e8 // 100MB
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
-server.listen(443, () => {
-  console.log('🚀 Server running on port 443');
-});
+// ===== MIDDLEWARE SETUP =====
+app.use(compression());
 
-
-app.use(express.json()); 
-// Enhanced Security middleware
+// Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       connectSrc: [
-        "'self'",
-        "https://chats.dronanatural.com", // allow API + websocket
-        "wss://chats.dronanatural.com",   // allow websocket
-      ],
+         "'self'",
+         "https://chats.dronanatural.com",
+         "wss://chats.dronanatural.com"
+],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https:"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
@@ -91,69 +144,37 @@ app.use(helmet({
 }));
 
 // Logging middleware
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
+// if (ACTUAL_ENVIRONMENT === 'development') {
+//   app.use(morgan('dev'));
+// } else {
+//   app.use(morgan('combined'));
+// }
 
+// if (ACTUAL_ENVIRONMENT === 'production') {
+//   app.use(express.static(path.join(__dirname, '../frontend/build')));
+//   app.get('*', (req, res) => {
+//     res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
+//   });
+// }
 
-if (process.env.NODE_ENV === 'production') {
-  const sslOptions = {
-    key: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem'),
-    cert: fs.readFileSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem'),
-  };
-  server = require('https').createServer(sslOptions, app);
-  io = new Server(server, {
-    cors: {
-      origin: allowedOrigins,
-      credentials: true,
-    }
-  });
-  console.log("🔒 Using HTTPS (production)");
-} else {
-  server = require('http').createServer(app);
-  io = new Server(server, {
-    cors: {
-      origin: allowedOrigins,
-      credentials: true,
-    }
-  });
-  console.log("🔓 Using HTTP (development)");
-}
-
-
-
-// 🌐 Serve React build
-app.use(express.static(path.join(__dirname, '../frontend/build')));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
-});
-
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
-    console.log("🌐 Incoming Origin:", origin);
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      console.log("✅ Allowing request with no origin");
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.includes(origin)) {
-      console.log("✅ Allowing origin:", origin);
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn(`❌ Blocked origin: ${origin}`);
-      console.warn("Allowed origins:", allowedOrigins);
-      callback(new Error('Not allowed by CORS'));
+      console.log("🌐 Incoming Origin:", origin);
+      callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept']
-}));
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
 
-// Body parsing middleware with better limits
+app.use(cors(corsOptions));
+
+
+// Body parsing middleware
 app.use(express.json({ 
   limit: '10mb',
   verify: (req, res, buf) => {
@@ -167,20 +188,18 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Admin credentials from environment variables
+// ===== CLOUDINARY CONFIGURATION =====
 const ADMIN_CREDENTIALS = {
   name: process.env.ADMIN_NAME || 'Admin',
   email: process.env.ADMIN_EMAIL || 'admin@chat.com'
 };
 
-// Enhanced Cloudinary configuration with error handling
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dtmfrtwy4',
   api_key: process.env.CLOUDINARY_API_KEY || '629516584655468',
   api_secret: process.env.CLOUDINARY_API_SECRET || '8k-EvIFA-ZcNDI-Po1M-8J6oQKw'
 });
 
-// Enhanced storage configuration with better file validation
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -193,7 +212,6 @@ const storage = new CloudinaryStorage({
   },
 });
 
-// Enhanced multer configuration with better file filtering
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/mov', 'video/avi', 'video/mkv'];
   
@@ -213,7 +231,7 @@ const upload = multer({
   }
 });
 
-// Input validation middleware
+// ===== UTILITY FUNCTIONS =====
 const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
@@ -224,96 +242,13 @@ const validateMessageData = (data) => {
   return sender && receiver && text && text.trim().length > 0;
 };
 
-// Enhanced File upload endpoint with better error handling
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+// ===== MONGODB CONNECTION =====
+const MONGODB_URI = process.env.MONGODB_URI;
 
-    // Additional validation
-    if (!req.file.mimetype.startsWith('image/') && !req.file.mimetype.startsWith('video/')) {
-      return res.status(400).json({ error: 'Invalid file type' });
-    }
-
-    res.json({ 
-      url: req.file.path,
-      filename: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'File upload failed' });
-  }
-});
-
-// Health check endpoint with more details
-app.get("/health", (req, res) => {
-  const health = {
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
-    version: "1.0.0",
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-  };
-  res.json(health);
-});
-
-// Enhanced Login route with better validation
-app.post('/api/login', async (req, res) => {
-  try {
-    let { name, email, isAdmin } = req.body;
-    
-    // Input validation
-    if (!name || !email) {
-      return res.status(400).json({ error: 'Name and email are required' });
-    }
-
-    name = name.trim();
-    email = email.trim().toLowerCase();
-
-    if (name.length < 2 || name.length > 50) {
-      return res.status(400).json({ error: 'Name must be between 2 and 50 characters' });
-    }
-
-    if (!validateEmail(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-
-    if (isAdmin) {
-      if (name === ADMIN_CREDENTIALS.name && email === ADMIN_CREDENTIALS.email) {
-        return res.json({
-          success: true,
-          user: { name, email },
-          isAdmin: true
-        });
-      } else {
-        return res.status(401).json({ error: 'Invalid admin credentials' });
-      }
-    }
-
-    // Check for existing user
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(200).json({ success: true, user: existingUser });
-    }
-
-    // Create new user
-    const newUser = new User({ name, email });
-    const savedUser = await newUser.save();
-    return res.status(201).json({ success: true, user: savedUser });
-
-  } catch (err) {
-    console.error("❌ Login DB error:", err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Enhanced MongoDB connection with better error handling
-// const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chatuser:CMq6bcHK@cluster0.djdgr5p.mongodb.net/chatDB?retryWrites=true&w=majority';
-const MONGODB_URI = process.env.MONGODB_URI  ; 
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI environment variable is required');
+  process.exit(1);
+}
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -352,11 +287,35 @@ process.on('SIGINT', async () => {
   }
 });
 
-// API Routes
+// ===== ROUTES =====
+// Debug middleware
+app.use((req, res, next) => {
+  console.log(`[${req.method}] ${req.path}`);
+  next();
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  const health = {
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: ACTUAL_ENVIRONMENT,
+    node_env: process.env.NODE_ENV,
+    version: "1.0.0",
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    ssl_enabled: server instanceof https.Server,
+    hostname: require('os').hostname()
+  };
+  res.json(health);
+});
+
+// Root endpoint
 app.get("/", (req, res) => {
   res.json({ 
     message: "💬 Chat backend is running...", 
     version: "1.0.0",
+    environment: ACTUAL_ENVIRONMENT,
     endpoints: {
       health: "/health",
       login: "/api/login",
@@ -367,17 +326,86 @@ app.get("/", (req, res) => {
   });
 });
 
-// Enhanced Get messages with pagination and caching
+// File upload endpoint
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!req.file.mimetype.startsWith('image/') && !req.file.mimetype.startsWith('video/')) {
+      return res.status(400).json({ error: 'Invalid file type' });
+    }
+
+    res.json({ 
+      url: req.file.path,
+      filename: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'File upload failed' });
+  }
+});
+
+// Login route
+app.post('/api/login', async (req, res) => {
+  try {
+    let { name, email, isAdmin } = req.body;
+    
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+
+    name = name.trim();
+    email = email.trim().toLowerCase();
+
+    if (name.length < 2 || name.length > 50) {
+      return res.status(400).json({ error: 'Name must be between 2 and 50 characters' });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    if (isAdmin) {
+      if (name === ADMIN_CREDENTIALS.name && email === ADMIN_CREDENTIALS.email) {
+        return res.json({
+          success: true,
+          user: { name, email },
+          isAdmin: true
+        });
+      } else {
+        return res.status(401).json({ error: 'Invalid admin credentials' });
+      }
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(200).json({ success: true, user: existingUser });
+    }
+
+    const newUser = new User({ name, email });
+    const savedUser = await newUser.save();
+    return res.status(201).json({ success: true, user: savedUser });
+
+  } catch (err) {
+    console.error("❌ Login DB error:", err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get messages
 app.get('/api/messages', async (req, res) => {
   try {
     const { user1, user2, limit = 20, offset = 0 } = req.query;
     
-    // Input validation
     if (!user1 || !user2) {
       return res.status(400).json({ error: 'user1 and user2 parameters are required' });
     }
 
-    const limitNum = Math.min(Number(limit), 100); // Max 100 messages per request
+    const limitNum = Math.min(Number(limit), 100);
     const offsetNum = Math.max(Number(offset), 0);
 
     const messages = await Message.find({
@@ -406,7 +434,7 @@ app.get('/api/messages', async (req, res) => {
   }
 });
 
-// Enhanced Get all users with pagination
+// Get all users
 app.get("/api/users", async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
@@ -438,7 +466,7 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
-// Get unread counts for a user
+// Get unread counts
 app.get("/api/unread-counts/:userEmail", async (req, res) => {
   try {
     const { userEmail } = req.params;
@@ -447,7 +475,6 @@ app.get("/api/unread-counts/:userEmail", async (req, res) => {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    // Handle admin user case
     if (userEmail === ADMIN_CREDENTIALS.email) {
       return res.json({ unreadCounts: {} });
     }
@@ -458,15 +485,12 @@ app.get("/api/unread-counts/:userEmail", async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Handle case where unreadCounts might not be initialized
     let unreadCounts = {};
     if (user.unreadCounts && user.unreadCounts instanceof Map) {
-      // Convert Map to object for JSON response
       for (let [key, value] of user.unreadCounts) {
         unreadCounts[key] = value;
       }
     } else if (user.unreadCounts && typeof user.unreadCounts === 'object') {
-      // If it's already an object (from lean query)
       unreadCounts = user.unreadCounts;
     }
 
@@ -505,7 +529,7 @@ app.post("/api/mark-read", async (req, res) => {
   }
 });
 
-// Get total unread count for a user
+// Get total unread count
 app.get("/api/total-unread/:userEmail", async (req, res) => {
   try {
     const { userEmail } = req.params;
@@ -514,7 +538,6 @@ app.get("/api/total-unread/:userEmail", async (req, res) => {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    // Handle admin user case
     if (userEmail === ADMIN_CREDENTIALS.email) {
       return res.json({ totalUnread: 0 });
     }
@@ -534,7 +557,7 @@ app.get("/api/total-unread/:userEmail", async (req, res) => {
   }
 });
 
-// Get users with last message times for admin panel
+// Get users with last message times
 app.get("/api/users-with-last-message", async (req, res) => {
   try {
     const users = await User.find({ email: { $ne: ADMIN_CREDENTIALS.email } }, "name email createdAt")
@@ -560,7 +583,6 @@ app.get("/api/users-with-last-message", async (req, res) => {
       };
     }));
 
-    // Sort by last message time (LIFO)
     usersWithLastMsg.sort((a, b) => {
       return new Date(b.lastMessageTime) - new Date(a.lastMessageTime);
     });
@@ -572,7 +594,7 @@ app.get("/api/users-with-last-message", async (req, res) => {
   }
 });
 
-// Enhanced Get conversation between admin and user
+// Get conversation
 app.get("/api/conversation/:userEmail", async (req, res) => {
   try {
     const { userEmail } = req.params;
@@ -612,32 +634,47 @@ app.get("/api/conversation/:userEmail", async (req, res) => {
   }
 });
 
-// Enhanced Socket.IO setup with better configuration
-// const io = new Server(server, {
-//   cors: {
-//     origin: allowedOrigins,
-//     credentials: true,
-//     methods: ["GET", "POST"]
-//   },
-//   pingTimeout: 60000,
-//   pingInterval: 25000,
-//   transports: ['websocket', 'polling'],
-//   allowEIO3: true,
-//   maxHttpBufferSize: 1e8 // 100MB
-// });
+// Test admin endpoint
+app.get("/api/test-admin", async (req, res) => {
+  try {
+    const adminUser = await User.findOne({ email: 'admin@chat.com' });
+    if (adminUser) {
+      res.json({ 
+        exists: true, 
+        user: {
+          name: adminUser.name,
+          email: adminUser.email,
+          unreadCounts: adminUser.unreadCounts,
+          isOnline: adminUser.isOnline
+        }
+      });
+    } else {
+      res.json({ exists: false, message: 'Admin user not found' });
+    }
+  } catch (err) {
+    console.error('Error checking admin user:', err);
+    res.status(500).json({ error: "Failed to check admin user" });
+  }
+});
 
-// Socket.IO connection handling with enhanced features
+// Serve React build files
+if (ACTUAL_ENVIRONMENT === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/build')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
+  });
+}
+
+// ===== SOCKET.IO HANDLERS =====
 io.on("connection", (socket) => {
-  console.log("⚡ User connected:", socket.id);
+  console.log("⚡ User connected:", socket.id, "from:", socket.handshake.headers.origin);
 
-  // Store user information
   socket.userData = {};
 
   socket.on("user-online", async (data) => {
     try {
       socket.userData = data;
       
-      // Update user's online status in database
       await User.findOneAndUpdate(
         { email: data.email },
         { 
@@ -655,7 +692,6 @@ io.on("connection", (socket) => {
 
   socket.on("user-offline", async (data) => {
     try {
-      // Update user's offline status in database
       await User.findOneAndUpdate(
         { email: data.email },
         { 
@@ -675,13 +711,11 @@ io.on("connection", (socket) => {
     try {
       const { sender, receiver, text, type = 'text', senderEmail } = data;
       
-      // Enhanced validation
       if (!validateMessageData(data)) {
         socket.emit("message-error", { error: "Invalid message data" });
         return;
       }
 
-      // Rate limiting for messages (max 10 messages per minute per user)
       const messageCount = await Message.countDocuments({
         sender,
         timestamp: { $gte: new Date(Date.now() - 60000) }
@@ -697,18 +731,16 @@ io.on("connection", (socket) => {
         receiver, 
         text: text.trim(), 
         type,
-        senderEmail, // Add sender email for admin panel
+        senderEmail,
         timestamp: new Date()
       });
       
       const saved = await newMessage.save();
       
-      // Update unread count for receiver
       try {
         const receiverUser = await User.findOne({ email: receiver });
         if (receiverUser) {
           await receiverUser.incrementUnreadCount(sender);
-          // Emit updated unread count to receiver
           io.emit("unread-count-updated", {
             userEmail: receiver,
             senderEmail: sender,
@@ -719,7 +751,6 @@ io.on("connection", (socket) => {
         console.error("Error updating unread count:", unreadError);
       }
       
-      // Emit to all connected clients
       io.emit("receive-message", saved);
       
       console.log(`💬 Message sent: ${sender} → ${receiver}`);
@@ -743,7 +774,6 @@ io.on("connection", (socket) => {
       return;
     }
     try {
-      // Update message status in database
       const message = await Message.findById(messageId);
       if (message) {
         await message.markAsDelivered();
@@ -758,12 +788,10 @@ io.on("connection", (socket) => {
     try {
       const { user, admin, messageId, sender, receiver } = data;
       
-      // Mark specific message as read if messageId is provided
       if (messageId) {
         const message = await Message.findById(messageId);
         if (message) {
           await message.markAsRead();
-          // Emit to all clients so both sender and receiver see blue ticks
           io.emit("message-read", { 
             messageId,
             sender: message.sender,
@@ -772,7 +800,6 @@ io.on("connection", (socket) => {
         }
       }
       
-      // Reset unread count when admin opens chat with user
       if (admin && user) {
         const adminUser = await User.findOne({ email: admin });
         if (adminUser) {
@@ -819,7 +846,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Enhanced Error handling middleware
+// ===== ERROR HANDLING =====
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   
@@ -840,7 +867,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Enhanced 404 handler
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
@@ -848,7 +875,7 @@ app.use((req, res) => {
     method: req.method,
     availableEndpoints: {
       health: "GET /health",
-      login: "GET /api/login",
+      login: "POST /api/login",
       upload: "POST /api/upload",
       messages: "GET /api/messages",
       users: "GET /api/users"
@@ -856,32 +883,22 @@ app.use((req, res) => {
   });
 });
 
-// Debug Logs
-app.use((req, res, next) => {
-  console.log(`[${req.method}] ${req.path}`);
-  next();
-});
-
-// Test endpoint to check admin user
-app.get("/api/test-admin", async (req, res) => {
-  try {
-    const adminUser = await User.findOne({ email: 'admin@chat.com' });
-    if (adminUser) {
-      res.json({ 
-        exists: true, 
-        user: {
-          name: adminUser.name,
-          email: adminUser.email,
-          unreadCounts: adminUser.unreadCounts,
-          isOnline: adminUser.isOnline
-        }
-      });
-    } else {
-      res.json({ exists: false, message: 'Admin user not found' });
-    }
-  } catch (err) {
-    console.error('Error checking admin user:', err);
-    res.status(500).json({ error: "Failed to check admin user" });
+// ===== PORT SELECTION =====
+const getPort = () => {
+  if (ACTUAL_ENVIRONMENT === 'production') {
+    // On production server with SSL
+    return server instanceof https.Server ? 443 : 80;
+  } else {
+    // Local development
+    return process.env.PORT || 5000;
   }
+};
+const PORT = process.env.PORT || getPort();
+server.listen(PORT,'0.0.0.0', () => {
+  console.log(`🚀 Server running on localhost:${PORT}`);
+  console.log(`🔗 Socket.IO ready for connections`);
+  console.log(`🌐 Behind NGINX reverse proxy`);
+  console.log("MongoDB URI:", process.env.MONGO_URI);
 });
 
+app.options("*", cors());

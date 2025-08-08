@@ -2,22 +2,40 @@ import './App.css';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { Picker } from 'emoji-mart';
-// import 'emoji-mart/css/emoji-mart.css';
 import { FaCheck, FaCheckDouble, FaRegSmile, FaMoon, FaSun, FaCircle, FaDownload, FaTimes, FaExpand, FaPlay } from 'react-icons/fa';
 
+// Create Socket.IO instance with better configuration
 const createSocket = () => {
-  const socket = io(process.env.REACT_APP_API_URL || 'https://chats.dronanatural.com', {
-    transports: ['websocket'],
+  // const socket = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:3000', {
+  const socket = io("https://chats.dronanatural.com", {
+    transports: ['websocket', 'polling'],
+    path: "/api/socket.io/",
     withCredentials: true,
-    timeout: 20000,
-    reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
+    // timeout: 20000,
+    // reconnection: true,
+    // reconnectionAttempts: 10,
+    // reconnectionDelay: 1000,
+    // autoConnect: true,
+    // forceNew: false,
   });
+
+  socket.on('connect', () => {
+    console.log('Socket.IO connected successfully');
+    console.log('Socket ID:', socket.id);
+  });
+  
+  socket.on('connect_error', (error) => {
+    console.error('Socket.IO connection error:', error);
+  });
+  
+  socket.on('disconnect', (reason) => {
+    console.log('Socket.IO disconnected:', reason);
+  });
+
   return socket;
 };
 
-const socket = createSocket();
+let socket;
 
 // Media Modal Component
 const MediaModal = ({ media, onClose, darkMode }) => {
@@ -273,9 +291,9 @@ function Loader() {
 
 function FullScreenLoader() {
   return (
-    <div class="fullscreen-loader-overlay">
-    <div class="fullscreen-loading-spinner"></div>
-  </div>
+    <div className="fullscreen-loader-overlay">
+      <div className="fullscreen-loading-spinner"></div>
+    </div>
   );
 }
 
@@ -299,18 +317,60 @@ function App() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return localStorage.getItem('darkMode') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [onlineUsers, setOnlineUsers] = useState({});
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   const chatBoxRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
 
   const PAGE_SIZE = 20;
-  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  const isAdmin = (() => {
+    try {
+      return localStorage.getItem('isAdmin') === 'true';
+    } catch {
+      return false;
+    }
+  })();
   const trimmedSearch = searchTerm.trim().toLowerCase();
+
+  // Initialize socket connection
+  useEffect(() => {
+    if (!socket) {
+      socket = createSocket();
+    }
+    
+    socket.on('connect', () => {
+      setSocketConnected(true);
+      console.log('Socket connected, ID:', socket.id);
+      
+      // Re-authenticate on reconnect
+      if (loggedIn) {
+        socket.emit('user-online', { email, name });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      setSocketConnected(false);
+      console.log('Socket disconnected');
+    });
+
+    return () => {
+      if (socket) {
+        socket.removeAllListeners();
+      }
+    };
+  }, []);
 
   // Memoized sorted users (LIFO order)
   const sortedUsers = useMemo(() => {
@@ -338,202 +398,151 @@ function App() {
   const scrollToBottom = useCallback(() => {
     const chatBox = chatBoxRef.current;
     if (chatBox) {
-      chatBox.scrollTop = chatBox.scrollHeight;
+      setTimeout(() => {
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }, 100);
     }
   }, []);
 
   // Dark mode effect
   useEffect(() => {
     document.body.className = darkMode ? 'dark' : '';
-    localStorage.setItem('darkMode', darkMode);
+    try {
+      localStorage.setItem('darkMode', darkMode);
+    } catch (e) {
+      console.error('Failed to save dark mode preference:', e);
+    }
   }, [darkMode]);
 
   useEffect(() => {
     scrollToBottom();
   }, [chat, selectedUser, scrollToBottom]);
 
-  // Load user from localStorage on mount
+  // Load user data from localStorage on mount
   useEffect(() => {
-    const stored = localStorage.getItem('chatUser');
-    if (stored) {
-      try {
+    try {
+      const stored = localStorage.getItem('chatUser');
+      if (stored) {
         const user = JSON.parse(stored);
         setName(user.name);
         setEmail(user.email);
         setLoggedIn(true);
-      } catch (err) {
-        localStorage.removeItem('chatUser');
       }
-    }
-    
-    // Load selectedUser from localStorage
-    const storedSelectedUser = localStorage.getItem('selectedUser');
-    if (storedSelectedUser) {
-      try {
+      
+      const storedSelectedUser = localStorage.getItem('selectedUser');
+      if (storedSelectedUser) {
         const parsed = JSON.parse(storedSelectedUser);
         setSelectedUser(parsed);
-      } catch (err) {
-        localStorage.removeItem('selectedUser');
       }
-    }
-    
-    // Load chat messages from localStorage
-    const storedChat = localStorage.getItem('chatMessages');
-    if (storedChat) {
-      try {
+      
+      // Load chat messages from localStorage only if we have user context
+      const storedChat = localStorage.getItem('chatMessages');
+      if (storedChat && stored) {
         const parsed = JSON.parse(storedChat);
         setChat(parsed);
-      } catch (err) {
-        localStorage.removeItem('chatMessages');
       }
-    }
-    
-    // Load lastMessages from localStorage
-    const storedLastMessages = localStorage.getItem('lastMessages');
-    if (storedLastMessages) {
-      try {
+      
+      const storedLastMessages = localStorage.getItem('lastMessages');
+      if (storedLastMessages) {
         const parsed = JSON.parse(storedLastMessages);
-        // Convert string timestamps back to Date objects
         const converted = {};
         Object.keys(parsed).forEach(key => {
-          converted[key] = {
-            ...parsed[key],
-            time: new Date(parsed[key].time)
-          };
+          if (parsed[key] && parsed[key].time) {
+            converted[key] = {
+              ...parsed[key],
+              time: new Date(parsed[key].time)
+            };
+          }
         });
         setLastMessages(converted);
-      } catch (err) {
-        localStorage.removeItem('lastMessages');
       }
+    } catch (err) {
+      console.error('Failed to load from localStorage:', err);
+      // Clear corrupted data
+      localStorage.removeItem('chatUser');
+      localStorage.removeItem('selectedUser');
+      localStorage.removeItem('chatMessages');
+      localStorage.removeItem('lastMessages');
     }
   }, []);
 
-  // Save selectedUser to localStorage
+  // Save data to localStorage with error handling
   useEffect(() => {
     if (selectedUser) {
-      localStorage.setItem('selectedUser', JSON.stringify(selectedUser));
+      try {
+        localStorage.setItem('selectedUser', JSON.stringify(selectedUser));
+      } catch (e) {
+        console.error('Failed to save selected user:', e);
+      }
     } else {
       localStorage.removeItem('selectedUser');
     }
   }, [selectedUser]);
 
-  // Save lastMessages to localStorage
   useEffect(() => {
     if (Object.keys(lastMessages).length > 0) {
-      localStorage.setItem('lastMessages', JSON.stringify(lastMessages));
+      try {
+        localStorage.setItem('lastMessages', JSON.stringify(lastMessages));
+      } catch (e) {
+        console.error('Failed to save last messages:', e);
+      }
     }
   }, [lastMessages]);
+
+  // Save chat messages to localStorage
+  useEffect(() => {
+    if (chat.length > 0) {
+      try {
+        localStorage.setItem('chatMessages', JSON.stringify(chat));
+      } catch (e) {
+        console.error('Failed to save chat messages:', e);
+      }
+    }
+  }, [chat]);
 
   // Unread counts sync
   useEffect(() => {
     if (isAdmin) {
-      localStorage.setItem('unreadCounts', JSON.stringify(unreadCounts));
+      try {
+        localStorage.setItem('unreadCounts', JSON.stringify(unreadCounts));
+      } catch (e) {
+        console.error('Failed to save unread counts:', e);
+      }
     }
   }, [unreadCounts, isAdmin]);
+
   useEffect(() => {
     if (isAdmin) {
-      const stored = localStorage.getItem('unreadCounts');
-      if (stored) setUnreadCounts(JSON.parse(stored));
+      try {
+        const stored = localStorage.getItem('unreadCounts');
+        if (stored) setUnreadCounts(JSON.parse(stored));
+      } catch (e) {
+        console.error('Failed to load unread counts:', e);
+      }
     }
   }, [isAdmin]);
 
   // Fetch users for admin
   useEffect(() => {
-    if (loggedIn && isAdmin) fetchUsers();
-  }, [loggedIn, isAdmin]);
-
-  // Socket event listeners
-  useEffect(() => {
-    socket.on('receive-message', handleReceiveMessage);
-    socket.on('typing', handleTyping);
-    socket.on('stop-typing', handleStopTyping);
-    socket.on('message-error', handleMessageError);
-    socket.on('user-online', handleUserOnline);
-    socket.on('user-offline', handleUserOffline);
-    socket.on('message-delivered', handleMessageDelivered);
-    socket.on('message-read', handleMessageRead);
-    socket.on('unread-count-updated', handleUnreadCountUpdated);
-    socket.on('unread-count-reset', handleUnreadCountReset);
-
-    // Notify server this user is online
-    if (loggedIn) socket.emit('user-online', { email, name });
-
-    return () => {
-      socket.off('receive-message', handleReceiveMessage);
-      socket.off('typing', handleTyping);
-      socket.off('stop-typing', handleStopTyping);
-      socket.off('message-error', handleMessageError);
-      socket.off('user-online', handleUserOnline);
-      socket.off('user-offline', handleUserOffline);
-      socket.off('message-delivered', handleMessageDelivered);
-      socket.off('message-read', handleMessageRead);
-      socket.off('unread-count-updated', handleUnreadCountUpdated);
-      socket.off('unread-count-reset', handleUnreadCountReset);
-      if (loggedIn) socket.emit('user-offline', { email, name });
-    };
-    // eslint-disable-next-line
-  }, [isAdmin, selectedUser, name, email, loggedIn]);
-
-  // Fetch messages when user/conversation changes
-  useEffect(() => {
-    if ((isAdmin && selectedUser) || (!isAdmin && loggedIn)) {
-      fetchMessages(true);
-      // Mark all as read when opening chat
-      if (isAdmin && selectedUser) {
-        socket.emit('message-read', { user: selectedUser.name, admin: name });
-      }
+    if (loggedIn && isAdmin && socketConnected) {
+      fetchUsers();
     }
-    // eslint-disable-next-line
-  }, [selectedUser, loggedIn, isAdmin]);
+  }, [loggedIn, isAdmin, socketConnected]);
 
-  // Fetch users
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/users-with-last-message`);
-      if (!response.ok) throw new Error('Failed to fetch users');
-      const data = await response.json();
-      
-      // Data is already sorted by last message time (LIFO)
-      setUsers(data);
-      
-      // Update lastMessages state with backend data
-      const newLastMessages = {};
-      data.forEach(user => {
-        if (user.lastMessageTime) {
-          newLastMessages[user.name] = {
-            text: user.lastMessage || '',
-            time: new Date(user.lastMessageTime)
-          };
-        }
-      });
-      setLastMessages(prev => ({ ...prev, ...newLastMessages }));
-    } catch (err) {
-      setError('Failed to load users');
-    }
-  };
-
-  // Handle receive message
+  // Handle receive message - FIXED VERSION
   const handleReceiveMessage = useCallback((msg) => {
+    console.log('Received message:', msg);
+    
     setChat(prev => {
-      // Replace temp message if matching (by sender, text, and close timestamp)
-      const tempIndex = prev.findIndex(m =>
-        m.sender === msg.sender &&
-        m.text === msg.text &&
-        Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 2000 &&
-        String(m._id).length < 20 // temp id is Date.now()
-      );
-      if (tempIndex >= 0) {
-        const updated = [...prev];
-        updated[tempIndex] = { ...msg, status: msg.status || 'sent' };
-        return updated;
-      }
-      // Otherwise, normal update logic
+      // Check if message already exists
       const existingIndex = prev.findIndex(m => m._id === msg._id);
       if (existingIndex >= 0) {
+        // Update existing message
         const updated = [...prev];
         updated[existingIndex] = { ...msg, status: msg.status || 'sent' };
         return updated;
       } else {
+        // Add new message
         return [...prev, { ...msg, status: msg.status || 'sent' }];
       }
     });
@@ -543,26 +552,27 @@ function App() {
       const { sender, text } = msg;
       const isChatOpen = selectedUser?.name === sender;
       
-      // Update last messages with current timestamp
+      // Update last messages
       setLastMessages(prev => ({
         ...prev,
         [sender]: { text, time: new Date() }
       }));
       
       // Update unread counts only if chat is not open
-      if (!isChatOpen) {
-        setUnreadCounts(prev => ({ ...prev, [msg.senderEmail]: (prev[msg.senderEmail] || 0) + 1 }));
+      if (!isChatOpen && msg.senderEmail) {
+        setUnreadCounts(prev => ({ 
+          ...prev, 
+          [msg.senderEmail]: (prev[msg.senderEmail] || 0) + 1 
+        }));
       }
       
-      // ALWAYS move user to top when they send a message (LIFO)
+      // Move user to top when they send a message (LIFO)
       if (msg.sender !== 'Admin') {
         setUsers(prev => {
           const updated = [...prev];
           const index = updated.findIndex(u => u.name === msg.sender);
           if (index > -1) {
-            // Remove user from current position
             const [moved] = updated.splice(index, 1);
-            // Add to top
             return [moved, ...updated];
           }
           return updated;
@@ -570,8 +580,8 @@ function App() {
       }
     }
     
-    // If message is from current chat, mark as read
-    if (msg.sender === selectedUser?.name && isAdmin) {
+    // Auto-mark as read if chat is open
+    if (selectedUser?.name === msg.sender && isAdmin) {
       setTimeout(() => {
         socket.emit('message-read', { 
           messageId: msg._id,
@@ -593,28 +603,31 @@ function App() {
         });
       }, 500);
     }
-  }, [selectedUser, isAdmin, name, socket]);
+  }, [selectedUser, isAdmin, name]);
 
-  // Typing indicator
+  // Typing indicator handlers
   const handleTyping = useCallback(({ sender }) => {
     setTypingUser(sender);
     setIsTyping(true);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
   }, []);
+
   const handleStopTyping = useCallback(() => {
     setIsTyping(false);
     setTypingUser('');
   }, []);
+
   const handleMessageError = useCallback(({ error }) => {
     setError(error);
     setTimeout(() => setError(''), 5000);
   }, []);
 
-  // Online/offline
+  // Online/offline handlers
   const handleUserOnline = useCallback(({ email }) => {
     setOnlineUsers(prev => ({ ...prev, [email]: true }));
   }, []);
+
   const handleUserOffline = useCallback(({ email }) => {
     setOnlineUsers(prev => {
       const updated = { ...prev };
@@ -623,7 +636,7 @@ function App() {
     });
   }, []);
 
-  // Delivery/read status
+  // Delivery/read status handlers
   const handleMessageDelivered = useCallback((data) => {
     setChat(prev => prev.map(msg => 
       msg._id === data.messageId 
@@ -640,63 +653,195 @@ function App() {
     ));
   }, []);
 
-  // Scroll/load more
+  // Unread count handlers
+  const handleUnreadCountUpdated = useCallback(({ userEmail, senderEmail, count }) => {
+    if (isAdmin && email === userEmail) {
+      setUnreadCounts(prev => ({
+        ...prev,
+        [senderEmail]: count
+      }));
+    }
+  }, [isAdmin, email]);
+
+  const handleUnreadCountReset = useCallback(({ userEmail, senderEmail }) => {
+    if (isAdmin && email === userEmail) {
+      setUnreadCounts(prev => ({
+        ...prev,
+        [senderEmail]: 0
+      }));
+    }
+  }, [isAdmin, email]);
+
+  // Socket event listeners
+  useEffect(() => {
+    if (!socket || !socketConnected) return;
+
+    // Remove existing listeners first
+    socket.off('receive-message');
+    socket.off('typing');
+    socket.off('stop-typing');
+    socket.off('message-error');
+    socket.off('user-online');
+    socket.off('user-offline');
+    socket.off('message-delivered');
+    socket.off('message-read');
+    socket.off('unread-count-updated');
+    socket.off('unread-count-reset');
+
+    // Add event listeners
+    socket.on('receive-message', handleReceiveMessage);
+    socket.on('typing', handleTyping);
+    socket.on('stop-typing', handleStopTyping);
+    socket.on('message-error', handleMessageError);
+    socket.on('user-online', handleUserOnline);
+    socket.on('user-offline', handleUserOffline);
+    socket.on('message-delivered', handleMessageDelivered);
+    socket.on('message-read', handleMessageRead);
+    socket.on('unread-count-updated', handleUnreadCountUpdated);
+    socket.on('unread-count-reset', handleUnreadCountReset);
+
+    // Notify server this user is online
+    if (loggedIn) {
+      socket.emit('user-online', { email, name });
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('receive-message', handleReceiveMessage);
+        socket.off('typing', handleTyping);
+        socket.off('stop-typing', handleStopTyping);
+        socket.off('message-error', handleMessageError);
+        socket.off('user-online', handleUserOnline);
+        socket.off('user-offline', handleUserOffline);
+        socket.off('message-delivered', handleMessageDelivered);
+        socket.off('message-read', handleMessageRead);
+        socket.off('unread-count-updated', handleUnreadCountUpdated);
+        socket.off('unread-count-reset', handleUnreadCountReset);
+      }
+    };
+  }, [
+    socketConnected, 
+    loggedIn, 
+    email, 
+    name,
+    handleReceiveMessage,
+    handleTyping,
+    handleStopTyping,
+    handleMessageError,
+    handleUserOnline,
+    handleUserOffline,
+    handleMessageDelivered,
+    handleMessageRead,
+    handleUnreadCountUpdated,
+    handleUnreadCountReset
+  ]);
+
+  // Fetch messages when user/conversation changes
+  useEffect(() => {
+    if ((isAdmin && selectedUser) || (!isAdmin && loggedIn)) {
+      fetchMessages(true);
+      
+      // Mark all as read when opening chat
+      if (isAdmin && selectedUser) {
+        socket.emit('message-read', { user: selectedUser.name, admin: name });
+      }
+    }
+  }, [selectedUser, loggedIn, isAdmin]);
+
+  // Scroll handling
   const handleScroll = useCallback((e) => {
     if (e.target.scrollTop === 0 && hasMore && !loading) {
       fetchMessages(false);
     }
   }, [hasMore, loading]);
 
-  // Login
+  // Fetch users
+  const fetchUsers = async () => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/users-with-last-message`);
+      if (!response.ok) throw new Error('Failed to fetch users');
+      const data = await response.json();
+      
+      setUsers(data);
+      
+      // Update lastMessages state with backend data
+      const newLastMessages = {};
+      data.forEach(user => {
+        if (user.lastMessageTime) {
+          newLastMessages[user.name] = {
+            text: user.lastMessage || '',
+            time: new Date(user.lastMessageTime)
+          };
+        }
+      });
+      setLastMessages(prev => ({ ...prev, ...newLastMessages }));
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+      setError('Failed to load users');
+    }
+  };
+
+  // Login function
   const handleLogin = async (e) => {
-     e.preventDefault();
+    e.preventDefault();
     if (!name.trim() || !email.trim()) {
       setError('Please enter both name and email');
       return;
     }
+    
     setIsLoading(true);
     setError('');
     const isAdminLogin = name === 'Admin' && email === 'admin@chat.com';
+    
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/login`, {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, isAdmin: isAdminLogin })
       });
+      
       const data = await response.json();
       if (response.ok && data.success) {
-        localStorage.setItem('chatUser', JSON.stringify(data.user));
-        localStorage.setItem('isAdmin', isAdminLogin.toString());
+        try {
+          localStorage.setItem('chatUser', JSON.stringify(data.user));
+          localStorage.setItem('isAdmin', isAdminLogin.toString());
+        } catch (e) {
+          console.error('Failed to save user data:', e);
+        }
+        
         setLoggedIn(true);
         setError('');
-        socket.emit('user-online', { email, name });
+        
+        // Emit user-online after socket is connected
+        if (socket && socketConnected) {
+          socket.emit('user-online', { email, name });
+        }
       } else {
         setError(data.error || 'Invalid credentials');
       }
     } catch (err) {
+      console.error('Login error:', err);
       setError('Server error while logging in');
     } finally {
       setIsLoading(false);
     }
   };   
 
-  // File upload with progress
+  // File upload handler
   const handleFileChange = async (e) => {
-    setIsUploading(true);
     const file = e.target.files[0];
-    if (!file) {
-      setIsUploading(false);
-      return;
-    }
+    if (!file) return;
 
     // File size validation (10MB limit)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (file.size > maxSize) {
       setError('File size must be less than 10MB');
-      setIsUploading(false);
       return;
     }
 
+    setIsUploading(true);
     const receiver = isAdmin && selectedUser ? selectedUser.name : 'Admin';
     const formData = new FormData();
     formData.append('file', file);
@@ -719,7 +864,7 @@ function App() {
           try {
             const data = JSON.parse(xhr.responseText);
             if (data?.url) {
-              socket.emit('send-message', {
+              const messageData = {
                 sender: name,
                 receiver,
                 text: data.url,
@@ -727,17 +872,33 @@ function App() {
                 fileName: file.name,
                 fileSize: file.size,
                 senderEmail: email
-              });
+              };
+              
+              if (socket && socketConnected) {
+                socket.emit('send-message', messageData);
+                
+                // Add to local chat immediately
+                const tempMessage = {
+                  ...messageData,
+                  _id: Date.now().toString(),
+                  status: 'sent',
+                  timestamp: new Date()
+                };
+                setChat(prev => [...prev, tempMessage]);
+              } else {
+                setError('Connection lost. Please try again.');
+              }
+              
               setUploadProgress(0);
             }
           } catch (err) {
+            console.error('Upload response parsing failed:', err);
             setError('Upload response parsing failed');
-            setUploadProgress(0);
           }
         } else {
           setError('Upload failed');
-          setUploadProgress(0);
         }
+        setUploadProgress(0);
       });
 
       xhr.addEventListener('error', () => {
@@ -745,29 +906,40 @@ function App() {
         setUploadProgress(0);
       });
 
-      xhr.open('POST', `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/upload`);
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      xhr.open('POST', `${apiUrl}/upload`);
       xhr.send(formData);
+      
     } catch (err) {
-      setError("File upload failed");
+      console.error('File upload failed:', err);
+      setError('File upload failed');
       setUploadProgress(0);
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Typing
+  // Typing input handler
   const handleTypingInput = useCallback(() => {
+    if (!socket || !socketConnected) return;
+    
     const receiver = isAdmin && selectedUser ? selectedUser.name : 'Admin';
     socket.emit('typing', { sender: name, receiver });
+    
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       socket.emit('stop-typing', { sender: name, receiver });
     }, 2000);
-  }, [isAdmin, selectedUser, name]);
+  }, [isAdmin, selectedUser, name, socketConnected]);
 
-  // Send message
+  // Send message function - FIXED VERSION
   const sendMessage = useCallback((text, type = 'text') => {
     if (!text.trim()) return;
+    if (!socket || !socketConnected) {
+      setError('Connection lost. Please try again.');
+      return;
+    }
+    
     const receiver = isAdmin && selectedUser ? selectedUser.name : 'Admin';
     const messageData = {
       sender: name,
@@ -777,39 +949,55 @@ function App() {
       senderEmail: email,
       timestamp: new Date()
     };
-    socket.emit("send-message", messageData);
+    
+    console.log('Sending message:', messageData);
+    
+    // Emit to server
+    socket.emit('send-message', messageData);
+    
+    // Add to local chat immediately with temp ID
     const tempMessage = {
       ...messageData,
-      _id: Date.now().toString(),
-      status: 'sent',
+      _id: `temp_${Date.now()}`,
+      status: 'sending',
       sent: true,
       delivered: false,
       read: false
     };
+    
     setChat(prev => [...prev, tempMessage]);
-    setMessage(''); // clear input after sending
-    setTimeout(() => {
-      socket.emit('message-delivered', {
-        messageId: tempMessage._id,
-        to: receiver
-      });
-    }, 1000);
-  }, [name, selectedUser, isAdmin, socket, email]);
+    setMessage('');
+    
+    // Update last message for current user
+    setLastMessages(prev => ({
+      ...prev,
+      [receiver]: { text: text.trim(), time: new Date() }
+    }));
+    
+  }, [name, selectedUser, isAdmin, email, socketConnected]);
 
-  // Fetch messages
+  // Fetch messages function
   const fetchMessages = async (reset = false) => {
     if (loading) return;
     setLoading(true);
+    
     try {
       const user1 = isAdmin ? name : 'Admin';
       const user2 = isAdmin ? selectedUser?.name : name;
+      
+      if (!user2) {
+        setLoading(false);
+        return;
+      }
+      
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
       const response = await fetch(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/messages?user1=${user1}&user2=${user2}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
+        `${apiUrl}/messages?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
       );
+      
       if (!response.ok) throw new Error('Failed to fetch messages');
       const data = await response.json();
       
-      // Handle the response structure properly
       const messages = data.messages || data;
       
       if (reset) {
@@ -821,11 +1009,54 @@ function App() {
       }
       setHasMore(messages.length === PAGE_SIZE);
     } catch (err) {
+      console.error('Failed to fetch messages:', err);
       setError('Failed to load messages');
     } finally {
       setLoading(false);
     }
   };
+
+  // Fetch unread counts
+  const fetchUnreadCounts = async () => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/unread-counts/${encodeURIComponent(email)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadCounts(data.unreadCounts || {});
+      }
+    } catch (err) {
+      console.error('Failed to fetch unread counts:', err);
+    }
+  };
+
+  // Mark conversation as read
+  const markConversationAsRead = async (senderEmail) => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/mark-read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userEmail: email, senderEmail })
+      });
+      
+      if (response.ok) {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [senderEmail]: 0
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to mark conversation as read:', err);
+    }
+  };
+
+  // Fetch unread counts on login
+  useEffect(() => {
+    if (loggedIn && isAdmin) {
+      fetchUnreadCounts();
+    }
+  }, [loggedIn, isAdmin]);
 
   // Emoji picker
   const addEmoji = (emoji) => {
@@ -841,7 +1072,7 @@ function App() {
     setSelectedMedia(null);
   }, []);
 
-  // Helpers
+  // Helper functions
   const getMatchedMessage = useCallback((userName) => {
     const match = Array.isArray(chat) && chat.find(msg =>
       (msg.sender === userName || msg.receiver === userName) &&
@@ -851,7 +1082,12 @@ function App() {
   }, [chat, trimmedSearch]);
 
   const logout = useCallback(() => {
-    localStorage.clear();
+    try {
+      localStorage.clear();
+    } catch (e) {
+      console.error('Failed to clear localStorage:', e);
+    }
+    
     setLoggedIn(false);
     setName('');
     setEmail('');
@@ -863,133 +1099,86 @@ function App() {
     setError('');
     setSelectedMedia(null);
     setUploadProgress(0);
-    socket.emit('user-offline', { email, name });
-  }, [email, name]);
+    
+    if (socket && socketConnected) {
+      socket.emit('user-offline', { email, name });
+    }
+  }, [email, name, socketConnected]);
 
   const formatTime = useCallback((timestamp) => {
     if (!timestamp) return '';
-    const date = new Date(timestamp);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString();
-    if (isToday) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (isYesterday) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString();
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString();
+      
+      if (isToday) {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } else if (isYesterday) {
+        return 'Yesterday';
+      } else {
+        return date.toLocaleDateString();
+      }
+    } catch (e) {
+      return '';
     }
   }, []);
 
   const highlightText = useCallback((text, term) => {
-    if (!term) return text;
+    if (!term || !text) return text;
     const regex = new RegExp(`(${term})`, 'gi');
     return text.split(regex).map((part, i) =>
       part.toLowerCase() === term ? <span key={i} className="highlight">{part}</span> : part
     );
   }, []);
 
-  // Cleanup typing timeout on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
     };
   }, []);
 
-  // Fetch unread counts on login
-  useEffect(() => {
-    if (loggedIn) {
-      fetchUnreadCounts();
-    }
-  }, [loggedIn]);
+  // Connection status indicator
+  const connectionStatus = socketConnected ? 'Connected' : 'Connecting...';
 
-  // Fetch unread counts from database
-  const fetchUnreadCounts = async () => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/unread-counts/${email}`);
-      if (response.ok) {
-        const data = await response.json();
-        setUnreadCounts(data.unreadCounts || {});
-      }
-    } catch (err) {
-      console.error('Failed to fetch unread counts:', err);
-    }
-  };
-
-  // Unread count updated from socket
-  const handleUnreadCountUpdated = useCallback(({ userEmail, senderEmail, count }) => {
-    // Only update if this user is admin and logged in
-    if (isAdmin && email === userEmail) {
-      setUnreadCounts(prev => ({
-        ...prev,
-        [senderEmail]: count
-      }));
-    }
-  }, [isAdmin, email]);
-
-  // Unread count reset from socket
-  const handleUnreadCountReset = useCallback(({ userEmail, senderEmail, count }) => {
-    if (isAdmin && email === userEmail) {
-      setUnreadCounts(prev => ({
-        ...prev,
-        [senderEmail]: 0
-      }));
-    }
-  }, [isAdmin, email]);
-
-  // Mark conversation as read
-  const markConversationAsRead = async (senderEmail) => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/mark-read`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userEmail: email , senderEmail })
-      });
-      
-      if (response.ok) {
-        setUnreadCounts(prev => ({
-          ...prev,
-          [senderEmail]: 0
-        }));
-      }
-    } catch (err) {
-      console.error('Failed to mark conversation as read:', err);
-    }
-  };
-
-  // Save chat messages to localStorage
-  useEffect(() => {
-    if (chat.length > 0) {
-      localStorage.setItem('chatMessages', JSON.stringify(chat));
-    } else {
-      localStorage.removeItem('chatMessages');
-    }
-  }, [chat]);
-
-  // UI
+  // Login UI
   if (!loggedIn) {
     return (
       <div className={`login-wrapper${darkMode ? ' dark' : ''}`}>
         <div className="login-card">
           <h2>Login to Chat</h2>
+          {!socketConnected && (
+            <div className="connection-status disconnected">
+              {connectionStatus}
+            </div>
+          )}
           {error && <div className="error-message">{error}</div>}
-          <input
-            type="text"
-            value={name}
-            placeholder="Enter your name"
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-          />
-          <input
-            type="email"
-            value={email}
-            placeholder="Enter your email"
-            onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-          />
-          <button onClick={handleLogin} disabled={isLoading}>
-            {isLoading ? 'Logging in...' : 'Login'}
-          </button>
+          <form onSubmit={handleLogin}>
+            <input
+              type="text"
+              value={name}
+              placeholder="Enter your name"
+              onChange={e => setName(e.target.value)}
+              required
+            />
+            <input
+              type="email"
+              value={email}
+              placeholder="Enter your email"
+              onChange={e => setEmail(e.target.value)}
+              required
+            />
+            <button type="submit" disabled={isLoading || !socketConnected}>
+              {isLoading ? 'Logging in...' : 'Login'}
+            </button>
+          </form>
           <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
             {darkMode ? <FaSun /> : <FaMoon />}
           </button>
@@ -998,12 +1187,18 @@ function App() {
     );
   }
 
+  // Admin users list UI
   if (isAdmin && !selectedUser) {
     return (
       <div className={`admin-users-list${darkMode ? ' dark' : ''}`}>
         <div className="admin-header">
           <h2>MyPursu Admin Panel</h2>
           <div className="admin-header-buttons">
+            {!socketConnected && (
+              <div className="connection-status disconnected">
+                {connectionStatus}
+              </div>
+            )}
             <button className="logout-btn" onClick={logout}>Logout</button>
             <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
               {darkMode ? <FaSun /> : <FaMoon />}
@@ -1026,6 +1221,7 @@ function App() {
             const lastMsgObj = lastMessages[user.name];
             const lastMsgTime = lastMsgObj?.time ? formatTime(lastMsgObj.time) : '';
             const isOnline = onlineUsers[user.email];
+            
             return (
               <li
                 key={user._id || idx}
@@ -1034,9 +1230,7 @@ function App() {
                 <button
                   onClick={() => {
                     setSelectedUser(user);
-                    // Mark conversation as read when admin opens chat
                     markConversationAsRead(user.email);
-                    // setUnreadCounts(prev => ({ ...prev, [user.email]: 0 }));
                   }}
                   className="user-button"
                 >
@@ -1047,7 +1241,9 @@ function App() {
                   <div className="user-info">
                     <div className="user-name-with-badge">
                       <span className="user-name">{user.name}</span>
-                      {unreadCounts[user.email] > 0 && <span className="badge">{unreadCounts[user.email]}</span>}
+                      {unreadCounts[user.email] > 0 && (
+                        <span className="badge">{unreadCounts[user.email]}</span>
+                      )}
                     </div>
                     <div className="user-email">{user.email}</div>
                     {lastMsgTime && (
@@ -1068,6 +1264,7 @@ function App() {
     );
   }
 
+  // Main chat UI
   return (
     <>
       {isUploading && <FullScreenLoader />}
@@ -1075,22 +1272,33 @@ function App() {
         <div className="chat-header">
           {isAdmin && selectedUser ? (
             <>
-              <button className="back-button" onClick={() => setSelectedUser(null)}>← Back</button>
+              <button className="back-button" onClick={() => setSelectedUser(null)}>
+                ← Back
+              </button>
               <h3>{selectedUser.name}</h3>
               {selectedUser.email && onlineUsers[selectedUser.email] && (
-                <span className="online-status"><FaCircle color="green" size={10} /> Online</span>
+                <span className="online-status">
+                  <FaCircle color="green" size={10} /> Online
+                </span>
               )}
             </>
           ) : (
             <h3>💬 Chat with Mypursu</h3>
           )}
           <div className="header-buttons">
+            {!socketConnected && (
+              <div className="connection-status disconnected">
+                {connectionStatus}
+              </div>
+            )}
             <button className="dark-toggle" onClick={() => setDarkMode(d => !d)}>
               {darkMode ? <FaSun /> : <FaMoon />}
             </button>
           </div>
         </div>
+        
         {error && <div className="error-message">{error}</div>}
+        
         {uploadProgress > 0 && uploadProgress < 100 && (
           <div className="upload-progress">
             <div className="upload-progress-bar">
@@ -1102,6 +1310,7 @@ function App() {
             <span>Uploading... {Math.round(uploadProgress)}%</span>
           </div>
         )}
+        
         <div className="chat-box" ref={chatBoxRef} onScroll={handleScroll}>
           {hasMore && !loading && (
             <button onClick={() => fetchMessages(false)} className="load-more-btn">
@@ -1109,6 +1318,7 @@ function App() {
             </button>
           )}
           {loading && <div className="loading-indicator">Loading...</div>}
+          
           {chat
             .filter((msg) => {
               if (isAdmin && selectedUser) {
@@ -1136,14 +1346,17 @@ function App() {
                   onMediaClick={handleMediaClick}
                 />
                 <div className="msg-meta">
-                  <span className="msg-time">{formatTime(msg.time || msg.timestamp)}</span>
-                  {/* Enhanced Delivery/Read status */}
+                  <span className="msg-time">
+                    {formatTime(msg.time || msg.timestamp)}
+                  </span>
                   {msg.sender === name && (
                     <span className="msg-status">
                       {msg.status === 'read' || msg.read ? (
                         <FaCheckDouble className="status-icon read" title="Read" />
                       ) : msg.status === 'delivered' || msg.delivered ? (
                         <FaCheckDouble className="status-icon delivered" title="Delivered" />
+                      ) : msg.status === 'sending' ? (
+                        <div className="sending-icon" title="Sending...">⏳</div>
                       ) : (
                         <FaCheck className="status-icon sent" title="Sent" />
                       )}
@@ -1151,26 +1364,37 @@ function App() {
                   )}
                 </div>
               </div>
-            ))
-          }
+            ))}
+          
           {isTyping && typingUser && (
             <div className="typing-indicator">
               {typingUser} is typing...
             </div>
           )}
         </div>
+        
         <div className="input-area">
           <input
             className="chat-input"
-            placeholder="Type your message..."
+            placeholder={socketConnected ? "Type your message..." : "Connecting..."}
             value={message}
             onChange={e => setMessage(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && sendMessage(message)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage(message);
+              }
+            }}
             onInput={handleTypingInput}
+            disabled={!socketConnected}
           />
-          {/* <button className="emoji-btn" onClick={() => setShowEmoji(e => !e)}>
+          <button 
+            className="emoji-btn" 
+            onClick={() => setShowEmoji(e => !e)}
+            disabled={!socketConnected}
+          >
             <FaRegSmile />
-          </button> */}
+          </button>
           {showEmoji && (
             <div className="emoji-picker">
               <Picker onSelect={addEmoji} theme={darkMode ? 'dark' : 'light'} />
@@ -1180,7 +1404,7 @@ function App() {
             <Loader />
           ) : (
             <>
-              <label htmlFor="file-upload" className="file-upload-label">
+              <label htmlFor="file-upload" className={`file-upload-label${!socketConnected ? ' disabled' : ''}`}>
                 📎
               </label>
               <input
@@ -1189,11 +1413,19 @@ function App() {
                 accept="image/*,video/*"
                 onChange={handleFileChange}
                 style={{ display: 'none' }}
+                disabled={!socketConnected}
               />
             </>
           )}
-          <button className="send-button" onClick={() => sendMessage(message)}>➤</button>
+          <button 
+            className="send-button" 
+            onClick={() => sendMessage(message)}
+            disabled={!socketConnected || !message.trim()}
+          >
+            ➤
+          </button>
         </div>
+        
         <div className="footer">
           <span className="user-label">User Name: {name}</span>
           <button className="logout-btn" onClick={logout}>Logout</button>

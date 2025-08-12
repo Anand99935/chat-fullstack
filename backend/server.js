@@ -10,8 +10,8 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const morgan = require('morgan');
 const path = require('path');
-const fs = require('fs');
 const os = require('os');
+const fs = require('fs');
 
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -22,19 +22,22 @@ const User = require('./models/user');
 const { log } = require('console');
 
 // ===== PROPER ENVIRONMENT DETECTION =====
-// Check if we're actually on the production server (not just NODE_ENV)
 const isActualProduction = () => {
-  // Check if SSL certificates exist (only on production server)
-  const sslKeyExists = fs.existsSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem');
-  const sslCertExists = fs.existsSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem');
-  
-  // Check if we're on the actual production server by hostname or other indicators
-  const hostname = require('os').hostname();
-  const isProductionServer = hostname.includes('droplet') || // DigitalOcean
-                            hostname.includes('ubuntu') ||   // Common VPS
+  try {
+    const sslKeyExists = fs.existsSync('/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem');
+    const sslCertExists = fs.existsSync('/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem');
+    
+    // Use the os module that was required at the top
+    const hostname = os.hostname(); 
+    const isProductionServer = hostname.includes('droplet') || 
+                            hostname.includes('ubuntu') || 
                             process.env.SERVER_TYPE === 'production';
-  
-  return sslKeyExists && sslCertExists && (process.env.NODE_ENV === 'production' || isProductionServer);
+    
+    return sslKeyExists && sslCertExists && (process.env.NODE_ENV === 'production' || isProductionServer);
+  } catch (e) {
+    console.error('Environment detection error:', e);
+    return false;
+  }
 };
 
 // Set environment based on actual conditions
@@ -86,6 +89,12 @@ const io = new Server(server, {
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000
+});
+
+require('dotenv').config({ 
+  path: path.resolve(__dirname, '.env'),
+  debug: false,
+  override: false
 });
 
 // ===== MIDDLEWARE SETUP =====
@@ -209,8 +218,10 @@ mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   maxPoolSize: 10,
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
+  w: 'majority',
+  authSource: 'admin'
 })
 .then(() => {
   console.log('✅ MongoDB connected successfully');

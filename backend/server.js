@@ -11,6 +11,7 @@ const compression = require('compression');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -18,9 +19,7 @@ const cloudinary = require('cloudinary').v2;
 
 const Message = require('./models/message');
 const User = require('./models/user');
-
-const app = express();
-app.set('trust proxy', 1);
+const { log } = require('console');
 
 // ===== PROPER ENVIRONMENT DETECTION =====
 // Check if we're actually on the production server (not just NODE_ENV)
@@ -40,9 +39,16 @@ const isActualProduction = () => {
 
 // Set environment based on actual conditions
 const ACTUAL_ENVIRONMENT = isActualProduction() ? 'production' : 'development';
+const PORT = process.env.PORT || 7000 ;
+const app = express();
+const server = http.createServer(app);
+app.set('trust proxy', 1);
+
+console.log('DEBUG PORT:', process.env.PORT);
 console.log(`🔍 Detected Environment: ${ACTUAL_ENVIRONMENT}`);
 console.log(`📋 NODE_ENV: ${process.env.NODE_ENV || 'undefined'}`);
-console.log(`💻 Hostname: $app.use(cors{require('os').hostname()}`);
+console.log(`💻 Hostname: ${os.hostname()}`);
+
 
 // CORS configuration
 const allowedOrigins = [
@@ -59,52 +65,15 @@ const allowedOrigins = [
 
 console.log("🌐 Allowed Origins:", allowedOrigins);
 
-// ===== SMART SERVER INITIALIZATION =====
-let server;
+// ===== SERVER INITIALIZATION =====
 
 if (ACTUAL_ENVIRONMENT === 'production') {
-  try {
-    // SSL files before creating HTTPS server
-    const sslKeyPath = '/etc/letsencrypt/live/chats.dronanatural.com/privkey.pem';
-    const sslCertPath = '/etc/letsencrypt/live/chats.dronanatural.com/fullchain.pem';
-    
-    if (fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath)) {
-      const sslOptions = {
-        key: fs.readFileSync(sslKeyPath),
-        cert: fs.readFileSync(sslCertPath),
-      };
-      server = https.createServer(sslOptions, app);
-      console.log("🔒 Using HTTPS (production with SSL)");
-    } else {
-      throw new Error('SSL certificates not found');
-    }
-  } catch (err) {
-    console.error("❌ SSL setup failed:", err.message);
-    // server = http.createServer(app);
-    console.log("⚠️ Fallback to HTTP (SSL unavailable)");
-  }
+  console.log(`HTTPS server running on port ${PORT}`);
 } else {
-  server = http.createServer(app);
-console.log("🔓 Using HTTP (behind NGINX reverse proxy)");
+  console.log(`🔓 HTTP Server running on port ${PORT}`);
 }
-
 // Always use HTTP for backend when behind reverse proxy
-server = http.createServer(app);
 console.log("🔓 Using HTTP (behind NGINX reverse proxy)");
-
-// Initialize Socket.IO
-// const io = new Server(server, {
-//   cors: {
-//     origin: allowedOrigins ,
-//     methods: ["GET", "POST"],
-//     credentials: true,
-//   },
-//   pingTimeout: 60000,
-//   pingInterval: 25000,
-//   transports: ['websocket', 'polling'],
-//   allowEIO3: true,
-//   maxHttpBufferSize: 1e8,
-// });
 
 const io = new Server(server, {
   cors: {
@@ -130,8 +99,7 @@ app.use(helmet({
       connectSrc: [
          "'self'",
          "https://chats.dronanatural.com",
-         "wss://chats.dronanatural.com"
-],
+         "wss://chats.dronanatural.com"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https:"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
@@ -143,19 +111,6 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// Logging middleware
-// if (ACTUAL_ENVIRONMENT === 'development') {
-//   app.use(morgan('dev'));
-// } else {
-//   app.use(morgan('combined'));
-// }
-
-// if (ACTUAL_ENVIRONMENT === 'production') {
-//   app.use(express.static(path.join(__dirname, '../frontend/build')));
-//   app.get('*', (req, res) => {
-//     res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
-//   });
-// }
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -657,14 +612,6 @@ app.get("/api/test-admin", async (req, res) => {
   }
 });
 
-// Serve React build files
-if (ACTUAL_ENVIRONMENT === 'production') {
-  app.use(express.static(path.join(__dirname, '../frontend/build')));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
-  });
-}
-
 // ===== SOCKET.IO HANDLERS =====
 io.on("connection", (socket) => {
   console.log("⚡ User connected:", socket.id, "from:", socket.handshake.headers.origin);
@@ -883,22 +830,8 @@ app.use((req, res) => {
   });
 });
 
-// ===== PORT SELECTION =====
-const getPort = () => {
-  if (ACTUAL_ENVIRONMENT === 'production') {
-    // On production server with SSL
-    return server instanceof https.Server ? 443 : 80;
-  } else {
-    // Local development
-    return process.env.PORT || 5000;
-  }
-};
-const PORT = process.env.PORT || getPort();
-server.listen(PORT,'0.0.0.0', () => {
-  console.log(`🚀 Server running on localhost:${PORT}`);
-  console.log(`🔗 Socket.IO ready for connections`);
-  console.log(`🌐 Behind NGINX reverse proxy`);
-  console.log("MongoDB URI:", process.env.MONGO_URI);
-});
-
 app.options("*", cors());
+
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+});

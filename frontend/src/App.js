@@ -6,25 +6,31 @@ import { FaCheck, FaCheckDouble, FaRegSmile, FaMoon, FaSun, FaCircle, FaDownload
 
 // Create Socket.IO instance with better configuration
 const createSocket = () => {
+const socket = io({
+  transports: ['websocket', 'polling'],
+  path: "/api/socket.io/",
+  withCredentials: true,
+});
+
   // const socket = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:3000', {
-  const socket = io("https://chats.dronanatural.com", {
-    transports: ['websocket', 'polling'],
-    path: "/api/socket.io/",
-    withCredentials: true,
+  // const socket = io("https://chats.dronanatural.com", {
+    // transports: ['websocket', 'polling'],
+    // path: "/api/socket.io/",
+    // withCredentials: true,
     // timeout: 20000,
     // reconnection: true,
     // reconnectionAttempts: 10,
     // reconnectionDelay: 1000,
     // autoConnect: true,
     // forceNew: false,
-  });
+  // });
 
   socket.on('connect', () => {
     console.log('Socket.IO connected successfully');
     console.log('Socket ID:', socket.id);
   });
   
-  socket.on('connect_error', (error) => {
+  socket.on('connect_eror', (error) => {
     console.error('Socket.IO connection error:', error);
   });
   
@@ -758,8 +764,9 @@ function App() {
   // Fetch users
   const fetchUsers = async () => {
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/users-with-last-message`);
+      // const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      // const response = await fetch(`${apiUrl}/users-with-last-message`);
+      const response = await fetch(`/api/users-with-last-message`)
       if (!response.ok) throw new Error('Failed to fetch users');
       const data = await response.json();
       
@@ -795,8 +802,9 @@ function App() {
     const isAdminLogin = name === 'Admin' && email === 'admin@chat.com';
     
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/login`, {
+      // const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      // const response = await fetch(`${apiUrl}/login`, {
+      const response = await fetch(`api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, isAdmin: isAdminLogin })
@@ -906,8 +914,9 @@ function App() {
         setUploadProgress(0);
       });
 
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-      xhr.open('POST', `${apiUrl}/upload`);
+      // const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      // xhr.open('POST', `${apiUrl}/upload`);
+      xhr.open('POST', '/api/upload');
       xhr.send(formData);
       
     } catch (err) {
@@ -990,9 +999,10 @@ function App() {
         return;
       }
       
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      // const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
       const response = await fetch(
-        `${apiUrl}/messages?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
+        // `${apiUrl}/messages?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
+        `api/messages?user1=${encodeURIComponent(user1)}&user2=${encodeURIComponent(user2)}&limit=${PAGE_SIZE}&offset=${reset ? 0 : offset}`
       );
       
       if (!response.ok) throw new Error('Failed to fetch messages');
@@ -1019,8 +1029,9 @@ function App() {
   // Fetch unread counts
   const fetchUnreadCounts = async () => {
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/unread-counts/${encodeURIComponent(email)}`);
+      // const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      // const response = await fetch(`${apiUrl}/unread-counts/${encodeURIComponent(email)}`);
+      const response = await fetch(`api/unread-counts/${encodeURIComponent(email)}`);
       if (response.ok) {
         const data = await response.json();
         setUnreadCounts(data.unreadCounts || {});
@@ -1033,8 +1044,9 @@ function App() {
   // Mark conversation as read
   const markConversationAsRead = async (senderEmail) => {
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/mark-read`, {
+      // const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+      // const response = await fetch(`${apiUrl}/mark-read`, {
+      const response = await fetch(`api/mark-read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userEmail: email, senderEmail })
@@ -1445,3 +1457,4 @@ function App() {
 }
 
 export default App;
+

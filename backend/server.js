@@ -213,15 +213,16 @@ if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI environment variable is required');
   process.exit(1);
 }
-
-mongoose.connect(MONGODB_URI, {
+const ca = [fs.readFileSync("/etc/ssl/certs/ca-certificates.crt")];
+mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  maxPoolSize: 10,
   serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
-  w: 'majority',
-  authSource: 'admin'
+  ssl: true,
+  sslValidate: true,
+  sslCA: ca,
+  replicaSet: 'atlas-9h2bkb-shard-0'
 })
 .then(() => {
   console.log('✅ MongoDB connected successfully');
@@ -231,6 +232,11 @@ mongoose.connect(MONGODB_URI, {
   console.error('❌ MongoDB connection error:', err);
   process.exit(1);
 });
+mongoose.connection.on('connected', () => console.log('MongoDB connected to PRIMARY'));
+mongoose.connection.on('connecting', () => console.log('Connecting to MongoDB...'));
+mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected'));
+mongoose.connection.on('reconnected', () => console.log('MongoDB reconnected'));
+mongoose.connection.on('fullsetup', () => console.log('All replica set members connected'));
 
 // MongoDB connection event handlers
 mongoose.connection.on('error', (err) => {

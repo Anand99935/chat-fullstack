@@ -208,21 +208,22 @@ const validateMessageData = (data) => {
 
 // ===== MONGODB CONNECTION =====
 const MONGODB_URI = process.env.MONGODB_URI;
-
+const macCertPath = '/usr/local/etc/openssl/cert.pem'; 
 if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI environment variable is required');
   process.exit(1);
 }
-const ca = [fs.readFileSync("/etc/ssl/certs/ca-certificates.crt")];
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 45000,
-  ssl: true,
-  sslValidate: true,
-  sslCA: ca,
-  replicaSet: 'atlas-9h2bkb-shard-0'
+  serverSelectionTimeoutMS: 30000,  // 30s timeout
+  socketTimeoutMS: 45000,          // 45s timeout
+  tls: true,
+  tlsCAFile: '/etc/ssl/cert.pem',
+  tlsAllowInvalidCertificates: false,
+  authSource: 'admin',
+  replicaSet: 'atlas-9h2bkb-shard-0',
+  tlsAllowInvalidCertificates: true
 })
 .then(() => {
   console.log('✅ MongoDB connected successfully');

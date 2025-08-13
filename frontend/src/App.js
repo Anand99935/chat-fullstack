@@ -4,26 +4,24 @@ import { io } from 'socket.io-client';
 import { Picker } from 'emoji-mart';
 import { FaCheck, FaCheckDouble, FaRegSmile, FaMoon, FaSun, FaCircle, FaDownload, FaTimes, FaExpand, FaPlay } from 'react-icons/fa';
 
+
+const backendURL =
+  window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "https://chats.dronanatural.com"; // Production backend
+
+export const socket = io(backendURL, {
+  transports: ["websocket"],
+  withCredentials: true,
+});
+
 // Create Socket.IO instance with better configuration
 const createSocket = () => {
-const socket = io({
+const socket = io("https://chats.dronanatural.com" ,{
   transports: ['websocket', 'polling'],
   path: "/api/socket.io/",
   withCredentials: true,
 });
-
-  // const socket = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:3000', {
-  // const socket = io("https://chats.dronanatural.com", {
-    // transports: ['websocket', 'polling'],
-    // path: "/api/socket.io/",
-    // withCredentials: true,
-    // timeout: 20000,
-    // reconnection: true,
-    // reconnectionAttempts: 10,
-    // reconnectionDelay: 1000,
-    // autoConnect: true,
-    // forceNew: false,
-  // });
 
   socket.on('connect', () => {
     console.log('Socket.IO connected successfully');
